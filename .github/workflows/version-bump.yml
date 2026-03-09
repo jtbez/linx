@@ -1,0 +1,111 @@
+name: Version Bump
+
+on:
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: 'Version bump type'
+        required: true
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+          - custom
+      custom_version:
+        description: 'Custom version (only used when bump is "custom", e.g. 2.1.0)'
+        required: false
+        type: string
+      packages:
+        description: 'Packages to bump'
+        required: true
+        type: choice
+        options:
+          - all
+          - core
+          - sdk
+        default: all
+
+permissions:
+  contents: write
+
+jobs:
+  version-bump:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'pnpm'
+
+      - name: Configure git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Validate custom version
+        if: inputs.bump == 'custom'
+        run: |
+          if [ -z "${{ inputs.custom_version }}" ]; then
+            echo "::error::Custom version is required when bump type is 'custom'"
+            exit 1
+          fi
+          if ! echo "${{ inputs.custom_version }}" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "::error::Invalid version format. Use semver (e.g. 2.1.0)"
+            exit 1
+          fi
+
+      - name: Bump versions
+        run: |
+          BUMP_TYPE="${{ inputs.bump }}"
+          CUSTOM_VERSION="${{ inputs.custom_version }}"
+          PACKAGES="${{ inputs.packages }}"
+
+          bump_package() {
+            local pkg_dir=$1
+            local pkg_name=$(node -e "console.log(require('./$pkg_dir/package.json').name)")
+
+            if [ "$BUMP_TYPE" = "custom" ]; then
+              cd "$pkg_dir"
+              npm version "$CUSTOM_VERSION" --no-git-tag-version
+              cd -
+              echo "Bumped $pkg_name to $CUSTOM_VERSION"
+            else
+              cd "$pkg_dir"
+              NEW_VERSION=$(npm version "$BUMP_TYPE" --no-git-tag-version)
+              cd -
+              echo "Bumped $pkg_name to $NEW_VERSION"
+            fi
+          }
+
+          if [ "$PACKAGES" = "all" ] || [ "$PACKAGES" = "core" ]; then
+            bump_package "packages/core"
+          fi
+
+          if [ "$PACKAGES" = "all" ] || [ "$PACKAGES" = "sdk" ]; then
+            bump_package "packages/sdk"
+          fi
+
+      - name: Commit and tag
+        run: |
+          BUMP_TYPE="${{ inputs.bump }}"
+          CUSTOM_VERSION="${{ inputs.custom_version }}"
+          PACKAGES="${{ inputs.packages }}"
+
+          if [ "$BUMP_TYPE" = "custom" ]; then
+            VERSION="$CUSTOM_VERSION"
+          else
+            VERSION=$(node -e "console.log(require('./packages/core/package.json').version)")
+          fi
+
+          git add -A
+          git commit -m "chore: bump ${PACKAGES} to v${VERSION}"
+          git tag "v${VERSION}"
+          git push
+          git push --tags

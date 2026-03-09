@@ -1,0 +1,38 @@
+{
+  "name": "@linxhq/playground",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Linx playground app (Next.js)",
+  "author": "jtbez",
+  "license": "UNLICENSED",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/jtbez/linx.git",
+    "directory": "apps/playground"
+  },
+  "bugs": {
+    "url": "https://github.com/jtbez/linx/issues"
+  },
+  "scripts": {
+    "dev": "next dev --webpack -p 3012",
+    "build": "next build --webpack",
+    "start": "next start",
+    "lint": "eslint",
+    "check-types": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@linxhq/sdk": "file:../../packages/sdk",
+    "next": "16.1.6",
+    "react": "19.2.3",
+    "react-dom": "19.2.3"
+  },
+  "devDependencies": {
+    "@types/node": "^20",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "babel-plugin-react-compiler": "1.0.0",
+    "eslint": "^9",
+    "eslint-config-next": "16.1.6",
+    "typescript": "^5"
+  }
+}

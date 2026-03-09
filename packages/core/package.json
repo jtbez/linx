@@ -1,0 +1,35 @@
+{
+  "name": "@linxhq/core",
+  "version": "1.0.0",
+  "description": "Linx core schemas, types, and contracts",
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./factoid-map": "./src/schemas/factoid-map/factoid-map.ts"
+  },
+  "author": "jtbez",
+  "license": "Linx Proprietary License",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/jtbez/linx.git",
+    "directory": "packages/core"
+  },
+  "bugs": {
+    "url": "https://github.com/jtbez/linx/issues"
+  },
+  "scripts": {
+    "build": "tsc",
+    "check-types": "tsc --noEmit"
+  },
+  "packageManager": "pnpm@10.29.3",
+  "dependencies": {
+    "@linxhq/vine-schema-dot-org": "file:../../../vine-schema-dot-org",
+    "@vinejs/vine": "^4.3.0",
+    "schema-dts": "^1.1.5"
+  },
+  "devDependencies": {
+    "typescript": "~5.8.3"
+  }
+}

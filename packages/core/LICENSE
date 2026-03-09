@@ -1,0 +1,40 @@
+Linx Proprietary License
+
+Copyright (c) 2026 Linx HQ. All rights reserved.
+
+Permission is hereby granted to any person or organization obtaining a copy
+of this software and associated documentation files (the "Software"), to use
+the Software for commercial and non-commercial purposes, subject to the
+following conditions:
+
+1. PERMITTED USES
+   - Use the Software in its original form to build applications and services.
+   - Install, run, and integrate the Software as a dependency in your projects.
+
+2. RESTRICTIONS
+   - You may NOT modify, alter, adapt, or create derivative works of the
+     Software.
+   - You may NOT redistribute, sublicense, sell, lease, or otherwise transfer
+     copies of the Software, in whole or in part, to any third party.
+   - You may NOT reverse engineer, decompile, or disassemble the Software,
+     except to the extent that such activity is expressly permitted by
+     applicable law.
+
+3. OWNERSHIP
+   The Software is and remains the exclusive property of Linx HQ. This license
+   does not grant you any rights to trademarks, service marks, or trade names
+   of Linx HQ.
+
+4. NO WARRANTY
+   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+   IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+   FITNESS FOR A PARTICULAR PURPOSE, AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+   AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES, OR OTHER
+   LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT, OR OTHERWISE, ARISING
+   FROM, OUT OF, OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+   DEALINGS IN THE SOFTWARE.
+
+5. TERMINATION
+   This license is effective until terminated. It will terminate automatically
+   if you fail to comply with any of its terms. Upon termination, you must
+   cease all use of the Software and destroy any copies in your possession.

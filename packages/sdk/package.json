@@ -1,0 +1,35 @@
+{
+  "name": "@linxhq/sdk",
+  "private": false,
+  "version": "1.0.0",
+  "description": "Linx SDK for building applications",
+  "type": "module",
+  "main": "./build/index.js",
+  "types": "./src/index.ts",
+  "author": "jtbez",
+  "license": "Linx Proprietary License",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/jtbez/linx.git",
+    "directory": "packages/sdk"
+  },
+  "bugs": {
+    "url": "https://github.com/jtbez/linx/issues"
+  },
+  "scripts": {
+    "check-types": "tsc --noEmit",
+    "sync-registry": "node scripts/sync-registry.js",
+    "build": "tsc && node scripts/sync-registry.js"
+  },
+  "dependencies": {
+    "@linxhq/core": "file:../core",
+    "@linxhq/vine-schema-dot-org": "file:../../../vine-schema-dot-org",
+    "@adonisjs/http-server": "^8.0.0",
+    "@tuyau/core": "^1.0.0"
+  },
+  "devDependencies": {
+    "@linxhq/api": "file:../../../linx-private/apps/api",
+    "@types/node": "^22.0.0",
+    "typescript": "~5.8"
+  }
+}
