@@ -38,7 +38,14 @@ station.name.setValue('Membury Service Area')
 await station.save()
 
 // List entities (subtypes are automatically filtered)
-const stations = await linx.serviceStation.list()  // only ServiceStation, not all LocalBusiness
+const page1 = await linx.serviceStation.list()  // only ServiceStation, not all LocalBusiness
+
+// Calling list() again auto-fetches the next page
+const page2 = await linx.serviceStation.list()
+
+// Get total count (uses cached pagination meta — no extra request)
+const total = await linx.serviceStation.count()
+console.log(total.data)  // 42
 
 // Create an entity with initial factoids
 const newStation = await linx.gasStation.create({
@@ -83,8 +90,18 @@ const station = await session.serviceStation('uuid', { depth: 2 })
 // List all entities of a type (subtypes are automatically filtered)
 const allStations = await session.serviceStation.list()  // only ServiceStation entities
 
-// List with pagination
-const page2 = await session.gasStation.list({ page: 2, perPage: 10 })
+// Calling list() again auto-fetches the next page (no explicit page needed)
+const nextStations = await session.serviceStation.list()
+
+// Explicit page request still works
+const page5 = await session.gasStation.list({ page: 5, perPage: 10 })
+
+// Get the total count (uses cached pagination meta if available)
+const total = await session.serviceStation.count()
+console.log(total.data)  // 42
+
+// Count with filters
+const filtered = await session.gasStation.count({ additionalType: 'GasStation' })
 
 // Create a new entity
 const created = await session.person.create({
@@ -214,7 +231,7 @@ await station.name.suggestions[0].upvote()
 
 ### Suggestions (RootFactoid only)
 
-Suggestions are pre-loaded in the background after entity fetch and accessible synchronously:
+Suggestions are pre-loaded in the background after entity fetch via a single batch request (not one request per factoid) and accessible synchronously. Factoids that already have suggestions in state are skipped:
 
 ```typescript
 // Access suggestions synchronously — no async call needed
@@ -270,25 +287,61 @@ await suggestions.previousPage()
 await suggestions.requestPage(3)
 ```
 
-## Caching
+## Caching & Smart State
 
-The SDK automatically caches entities by ID. Subsequent requests for the same entity return the cached instance (unless `depth` differs).
+The SDK automatically caches entities by ID and tracks pagination state per type. This minimises unnecessary network requests across all operations.
+
+### Entity Caching
 
 ```typescript
 // First call fetches from API
 const a = await client.gasStation('uuid')
 
-// Second call returns cached instance
+// Second call returns cached instance — no network request
 const b = await client.gasStation('uuid')
 
 // Invalidate a specific entity (also clears dirty state)
 client.invalidate('uuid')
 
-// Clear all cached entities
+// Clear all cached entities and pagination state
 client.clearCache()
 ```
 
 `entity.save()` automatically refreshes the cached entity from the server response.
+
+### Pagination State
+
+The SDK tracks which page was last fetched for each type+filter combination. This enables auto-advancing `list()` and zero-cost `count()`:
+
+```typescript
+// First list() fetches page 1
+const page1 = await session.gasStation.list()
+
+// Second list() auto-fetches page 2 (state tracks current page)
+const page2 = await session.gasStation.list()
+
+// When already on the last page, returns cached entities (no request)
+const lastAgain = await session.gasStation.list()
+
+// count() uses cached pagination meta — no extra request needed
+const total = await session.gasStation.count()
+console.log(total.data)  // 42
+
+// Explicit page always fetches that specific page
+const explicit = await session.gasStation.list({ page: 1 })
+
+// Filters are tracked independently
+const filtered = await session.gasStation.list({ filters: { additionalType: 'GasStation' } })
+const filteredPage2 = await session.gasStation.list({ filters: { additionalType: 'GasStation' } })
+```
+
+### Batch Fetching
+
+The SDK minimises network requests by batching where possible:
+
+- **Suggestions** are loaded for all factoids on an entity in a single `POST /factoids/batch-suggestions` request, instead of one request per factoid. Factoids that already have suggestions in state are excluded from the batch.
+- **Entity fetch by ID** returns from cache if the entity is already in state — no network request at all.
+- **`POST /entities/batch-show`** is available for fetching multiple entities by ID in one request.
 
 ## Security & DPoP
 

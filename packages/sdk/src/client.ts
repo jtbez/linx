@@ -109,6 +109,10 @@ class SessionClientImpl {
             }
         }
 
+        /** Build a cache key for pagination state from type + filters */
+        const paginationKey = (filters?: Record<string, string>) =>
+            JSON.stringify({ schemaType, ...filters })
+
         const fetchPage = async (
             page: number,
             perPage: number,
@@ -146,9 +150,13 @@ class SessionClientImpl {
                         return entity
                     })
 
+                const meta = response.meta as PaginationMeta
+                const key = paginationKey(filters)
+                this.state.setPagination(key, meta, entities.map((e) => e.id))
+
                 return paginatedSuccess(
                     entities,
-                    response.meta as PaginationMeta,
+                    meta,
                     (p) => fetchPage(p, perPage, filters),
                 )
             } catch (err) {
@@ -158,14 +166,74 @@ class SessionClientImpl {
 
         accessor.get = accessor
 
+        /**
+         * List entities of this type.
+         *
+         * - If an explicit `page` is provided, fetches that page.
+         * - If no page is provided and data already exists in state for this
+         *   type+filters, automatically fetches the next page.
+         * - If no data exists in state, fetches page 1.
+         */
         accessor.list = async (options?: {
             page?: number
             perPage?: number
             filters?: Record<string, string>
         }): Promise<PaginatedResult<HydratedEntity>> => {
-            const page = options?.page ?? 1
             const perPage = options?.perPage ?? 20
-            return fetchPage(page, perPage, options?.filters)
+
+            if (options?.page != null) {
+                return fetchPage(options.page, perPage, options?.filters)
+            }
+
+            const key = paginationKey(options?.filters)
+            const existing = this.state.getPagination(key)
+
+            if (existing) {
+                const nextPage = existing.currentPage + 1
+                if (existing.currentPage >= existing.meta.lastPage) {
+                    // Already on the last page — return the cached entities
+                    const cachedEntities = existing.entityIds
+                        .slice((existing.currentPage - 1) * perPage)
+                        .map((id) => this.state.getEntity(id))
+                        .filter((e): e is HydratedEntity => e != null)
+                    return paginatedSuccess(
+                        cachedEntities,
+                        existing.meta,
+                        (p) => fetchPage(p, perPage, options?.filters),
+                    )
+                }
+                return fetchPage(nextPage, perPage, options?.filters)
+            }
+
+            return fetchPage(1, perPage, options?.filters)
+        }
+
+        /**
+         * Get the total count of entities for this type.
+         *
+         * If pagination data already exists in state (from a prior list() call),
+         * returns the total from cached metadata without a network request.
+         * Otherwise, fetches page 1 to obtain the pagination metadata.
+         */
+        accessor.count = async (filters?: Record<string, string>): Promise<LinxResult<number>> => {
+            try {
+                requirePermission(perms, 'read')
+
+                const key = paginationKey(filters)
+                const existing = this.state.getPagination(key)
+                if (existing) {
+                    return success(existing.meta.total)
+                }
+
+                // No cached data — fetch page 1 to get pagination meta
+                const result = await fetchPage(1, 1, filters)
+                if (result.isError) {
+                    return failure(result.error!)
+                }
+                return success(result.meta!.total)
+            } catch (err) {
+                return failure(convertTuyauError(err, 'GET', `/${rootType}`) as LinxError)
+            }
         }
 
         accessor.create = async (data: Record<string, unknown>): Promise<LinxResult<HydratedEntity>> => {
@@ -206,31 +274,43 @@ class SessionClientImpl {
 
     /**
      * Register all factoids from an entity in the state manager,
-     * then fire background requests to load suggestions for each.
+     * then fire a single batch request to load suggestions for all
+     * factoids that don't already have suggestions in state.
      */
     private registerAndLoadSuggestions(entity: HydratedEntity): void {
         const factoids = (entity as any).getAllFactoids() as RootFactoid[]
+        const needsSuggestions: string[] = []
+
         for (const factoid of factoids) {
             this.state.setFactoid(factoid.id, factoid)
-            this.loadSuggestionsInBackground(factoid)
+            if (!this.state.hasSuggestions(factoid.id)) {
+                needsSuggestions.push(factoid.id)
+            }
+        }
+
+        if (needsSuggestions.length > 0) {
+            this.loadSuggestionsBatch(needsSuggestions)
         }
     }
 
     /**
-     * Fire-and-forget: fetch the first page of suggestions for a factoid
-     * and attach them to the RootFactoid's `.suggestions` property.
+     * Fire-and-forget: fetch suggestions for multiple factoids in a single
+     * batch request and attach them to each RootFactoid's `.suggestions`.
      */
-    private async loadSuggestionsInBackground(factoid: RootFactoid): Promise<void> {
+    private async loadSuggestionsBatch(factoidIds: string[]): Promise<void> {
         try {
-            const result = await this.api.request('factoids.suggestions', {
-                params: { id: factoid.id },
-            })
-            const rawSuggestions = result.data as unknown as SerializedFactoid[]
-            const suggestions = rawSuggestions.map(
-                (raw) => new Factoid(raw, this.api),
-            )
-            const fetchPage = (page: number) => this.fetchSuggestionsPage(factoid.id, page)
-            this.state.attachSuggestions(factoid.id, suggestions, result.meta as any, fetchPage)
+            const result = await this.api.request('factoids.batchSuggestions', {
+                body: { ids: factoidIds },
+            }) as { data: Record<string, SerializedFactoid[]> }
+
+            for (const factoidId of factoidIds) {
+                const rawSuggestions = result.data[factoidId] ?? []
+                const suggestions = rawSuggestions.map(
+                    (raw) => new Factoid(raw, this.api),
+                )
+                const fetchPage = (page: number) => this.fetchSuggestionsPage(factoidId, page)
+                this.state.attachSuggestions(factoidId, suggestions, null, fetchPage)
+            }
         } catch {
             // Silently fail — suggestions are non-critical
         }

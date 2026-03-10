@@ -5,6 +5,13 @@ import type { Factoid } from './factoid.js'
 import type { PaginationMeta } from './result.js'
 import { PaginatedCollection } from './paginated-collection.js'
 
+/** Tracks pagination state for a specific schema type */
+export interface TypePaginationState {
+    meta: PaginationMeta
+    currentPage: number
+    entityIds: string[]
+}
+
 /**
  * Normalized state store for entities and factoids.
  *
@@ -12,10 +19,15 @@ import { PaginatedCollection } from './paginated-collection.js'
  * for background suggestion attachment. When suggestions arrive
  * for a factoid, they are automatically attached to the
  * RootFactoid's `.suggestions` property.
+ *
+ * Also tracks pagination state per schema type so that repeated
+ * list() calls automatically advance to the next page, and count()
+ * can return totals without an extra request.
  */
 export class StateManager {
     private entities = new Map<string, HydratedEntity>()
     private factoids = new Map<string, RootFactoid>()
+    private pagination = new Map<string, TypePaginationState>()
 
     constructor(private tracker: ChangeTracker) {}
 
@@ -47,6 +59,26 @@ export class StateManager {
     clear(): void {
         this.entities.clear()
         this.factoids.clear()
+        this.pagination.clear()
+    }
+
+    // ── Pagination tracking ─────────────────────────────────────
+
+    /** Get the pagination state for a schema type (keyed by schemaType + filters) */
+    getPagination(key: string): TypePaginationState | undefined {
+        return this.pagination.get(key)
+    }
+
+    /** Update pagination state after a successful list() fetch */
+    setPagination(key: string, meta: PaginationMeta, entityIds: string[]): void {
+        const existing = this.pagination.get(key)
+        this.pagination.set(key, {
+            meta,
+            currentPage: meta.currentPage,
+            entityIds: existing
+                ? [...existing.entityIds, ...entityIds]
+                : entityIds,
+        })
     }
 
     /**
@@ -82,6 +114,14 @@ export class StateManager {
 
     setFactoid(id: string, factoid: RootFactoid): void {
         this.factoids.set(id, factoid)
+    }
+
+    /** Check if a factoid already has suggestions loaded */
+    hasSuggestions(id: string): boolean {
+        const factoid = this.factoids.get(id)
+        if (!factoid) return false
+        // meta is null on the default empty PaginatedCollection, non-null once attached
+        return factoid.suggestions.meta !== null
     }
 
     /**

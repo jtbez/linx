@@ -59,7 +59,7 @@ export interface AuthAsResult {
 
 // ── Permission-filtered type accessor ───────────────────────────────
 
-/** Read-only accessor: get by ID and list */
+/** Read-only accessor: get by ID, list, and count */
 interface ReadAccessor<TData> {
     (id: string, options?: { depth?: number }): Promise<LinxResult<HydratedEntityInstance<TData>>>
     get(id: string, options?: { depth?: number }): Promise<LinxResult<HydratedEntityInstance<TData>>>
@@ -68,6 +68,8 @@ interface ReadAccessor<TData> {
         perPage?: number
         filters?: Record<string, string>
     }): Promise<PaginatedResult<HydratedEntityInstance<TData>>>
+    /** Get the total count of entities for this type. Uses cached pagination meta when available. */
+    count(filters?: Record<string, string>): Promise<LinxResult<number>>
 }
 
 /** Create accessor */
