@@ -6,12 +6,11 @@ import type {
   AuthenticatedLinxClientInstance,
   SessionClientInstance,
   PaginatedResult,
-  LinxResult,
   StateSnapshot,
   EntityResponse,
 } from "@linxhq/sdk";
 import type { HydratedEntity } from "@linxhq/sdk";
-import { HydratedFactoid } from "@linxhq/sdk";
+import { RootFactoid } from "@linxhq/sdk";
 import styles from "./page.module.css";
 import { type LogEntry, createLogEntry, summarizeEntity, errorMessage } from "./utils";
 
@@ -84,14 +83,10 @@ export default function Home() {
       const accessor = (session as any)[entityType];
       const result: PaginatedResult<HydratedEntity> = await accessor.list({ perPage: 5 });
       const code = `const result = await session.${entityType}.list({ perPage: 5 })`;
-      if (result.isSuccess && result.data) {
-        const entities = result.data.map(summarizeEntity);
-        const constructed = { meta: result.meta, entities };
-        addLog(`List ${entityType}`, code, constructed, "success");
-        captureInspection(session, constructed);
-      } else {
-        addLog(`List ${entityType}`, code, result.error, "error");
-      }
+      const entities = result.data.map(summarizeEntity);
+      const constructed = { meta: result.meta, entities };
+      addLog(`List ${entityType}`, code, constructed, "success");
+      captureInspection(session, constructed);
     } catch (err: unknown) {
       addLog(`List ${entityType}`, `session.${entityType}.list()`, errorMessage(err), "error");
     }
@@ -101,15 +96,11 @@ export default function Home() {
     if (!session || !entityId) return;
     try {
       const accessor = (session as any)[entityType];
-      const result: LinxResult<HydratedEntity> = await accessor(entityId);
-      const code = `const result = await session.${entityType}('${entityId}')`;
-      if (result.isSuccess && result.data) {
-        const constructed = summarizeEntity(result.data);
-        addLog(`Get ${entityType}`, code, constructed, "success");
-        captureInspection(session, constructed);
-      } else {
-        addLog(`Get ${entityType}`, code, result.error, "error");
-      }
+      const entity: HydratedEntity = await accessor(entityId);
+      const code = `const entity = await session.${entityType}('${entityId}')`;
+      const constructed = summarizeEntity(entity);
+      addLog(`Get ${entityType}`, code, constructed, "success");
+      captureInspection(session, constructed);
     } catch (err: unknown) {
       addLog(`Get ${entityType}`, `session.${entityType}('${entityId}')`, errorMessage(err), "error");
     }
@@ -120,15 +111,11 @@ export default function Home() {
     try {
       const data = JSON.parse(createFields);
       const accessor = (session as any)[entityType];
-      const result: LinxResult<HydratedEntity> = await accessor.create(data);
-      const code = `const result = await session.${entityType}.create(${createFields})`;
-      if (result.isSuccess && result.data) {
-        const constructed = summarizeEntity(result.data);
-        addLog(`Create ${entityType}`, code, constructed, "success");
-        captureInspection(session, constructed);
-      } else {
-        addLog(`Create ${entityType}`, code, result.error, "error");
-      }
+      const entity: HydratedEntity = await accessor.create(data);
+      const code = `const entity = await session.${entityType}.create(${createFields})`;
+      const constructed = summarizeEntity(entity);
+      addLog(`Create ${entityType}`, code, constructed, "success");
+      captureInspection(session, constructed);
     } catch (err: unknown) {
       addLog(`Create ${entityType}`, `session.${entityType}.create(...)`, errorMessage(err), "error");
     }
@@ -138,35 +125,26 @@ export default function Home() {
     if (!session || !entityId) return;
     try {
       const accessor = (session as any)[entityType];
-      const result: LinxResult<HydratedEntity> = await accessor(entityId);
-      if (!result.isSuccess || !result.data) {
-        addLog(`Vote`, `session.${entityType}('${entityId}')`, result.error, "error");
-        return;
-      }
-      const entity = result.data;
+      const entity: HydratedEntity = await accessor(entityId);
       const attrs = entity.getAttributes();
       const firstAttr = Object.values(attrs).find(
-        (a): a is HydratedFactoid => a instanceof HydratedFactoid
+        (a): a is RootFactoid => a instanceof RootFactoid
       );
       if (!firstAttr) {
         addLog("Vote", "// no factoids found", "Entity has no simple attributes to vote on", "error");
         return;
       }
 
-      const voteResult = await firstAttr[direction]();
-      const code = `const entity = (await session.${entityType}('${entityId}')).data\nconst factoid = entity.${firstAttr.attribute}\nawait factoid.${direction}()`;
-      if (voteResult.isSuccess) {
-        const constructed = {
-          factoidId: firstAttr.id,
-          attribute: firstAttr.attribute,
-          value: firstAttr.current,
-          newConfidence: firstAttr.confidenceScore,
-        };
-        addLog(`${direction} on ${firstAttr.attribute}`, code, constructed, "success");
-        captureInspection(session, constructed);
-      } else {
-        addLog(`${direction}`, code, voteResult.error, "error");
-      }
+      await firstAttr[direction]();
+      const code = `const entity = await session.${entityType}('${entityId}')\nconst factoid = entity.${firstAttr.attribute}\nawait factoid.${direction}()`;
+      const constructed = {
+        factoidId: firstAttr.id,
+        attribute: firstAttr.attribute,
+        value: firstAttr.current,
+        newConfidence: firstAttr.confidenceScore,
+      };
+      addLog(`${direction} on ${firstAttr.attribute}`, code, constructed, "success");
+      captureInspection(session, constructed);
     } catch (err: unknown) {
       addLog(`Vote`, `...${direction}()`, errorMessage(err), "error");
     }

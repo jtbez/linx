@@ -34,8 +34,7 @@ export {
     RateLimitError,
     ServerError,
 } from './errors.js'
-export type { LinxResult, PaginatedResult, PaginationMeta, RequestStatus } from './result.js'
-export { success, failure } from './result.js'
+export type { PaginatedResult, PaginationMeta } from './result.js'
 export { isEntityType, isFactoidType, classifyProperty } from '@linxhq/vine-schema-dot-org/classify'
 export type { ActivityLogContract } from '@linxhq/core'
 

@@ -1,5 +1,5 @@
 import type { HydratedEntity } from "@linxhq/sdk";
-import { HydratedFactoid } from "@linxhq/sdk";
+import { RootFactoid } from "@linxhq/sdk";
 
 export type LogEntry = {
   id: number;
@@ -32,7 +32,7 @@ export function formatAttributes(entity: HydratedEntity): Record<string, unknown
   const attrs = entity.getAttributes();
   const out: Record<string, unknown> = {};
   for (const [key, val] of Object.entries(attrs)) {
-    if (val instanceof HydratedFactoid) {
+    if (val instanceof RootFactoid) {
       out[key] = {
         value: val.current,
         confidence: val.confidenceScore,
@@ -40,7 +40,7 @@ export function formatAttributes(entity: HydratedEntity): Record<string, unknown
       };
     } else {
       const sub: Record<string, unknown> = {};
-      for (const [subKey, subVal] of Object.entries(val as Record<string, HydratedFactoid>)) {
+      for (const [subKey, subVal] of Object.entries(val as Record<string, RootFactoid>)) {
         sub[subKey] = {
           value: subVal.current,
           confidence: subVal.confidenceScore,

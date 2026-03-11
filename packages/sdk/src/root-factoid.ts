@@ -1,10 +1,8 @@
 import type { ApiClient } from './api-client.js'
-import type { LinxError } from './errors.js'
-import type { LinxResult } from './result.js'
 import type { ChangeTracker } from './change-tracker.js'
 import type { SerializedFactoid } from './hydrated-entity.js'
+import type { Schemas } from '@linxhq/core'
 import { convertTuyauError } from './api-client.js'
-import { success, failure } from './result.js'
 import { Factoid } from './factoid.js'
 import { PaginatedCollection } from './paginated-collection.js'
 
@@ -15,10 +13,12 @@ import { PaginatedCollection } from './paginated-collection.js'
  * Suggestions are pre-loaded in the background after entity assembly
  * and accessible synchronously via the `.suggestions` property.
  *
+ * All mutation methods throw LinxError on failure.
+ *
  * toString() returns the current value for natural template usage:
  *   `<h1>${entity.name}</h1>` // renders the value string
  */
-export class RootFactoid<T = unknown> extends Factoid<T> {
+export class RootFactoid<T = unknown, TType extends Schemas = Schemas> extends Factoid<T, TType> {
     suggestions: PaginatedCollection<Factoid<T>>
 
     private tracker: ChangeTracker
@@ -49,18 +49,23 @@ export class RootFactoid<T = unknown> extends Factoid<T> {
         this.tracker.markUpdated(this.entityId, this.id, this.attribute, apiValue)
     }
 
+    /**
+     * Suggest an alternative value for this attribute.
+     * Creates a new factoid with isCurrent: false.
+     *
+     * Throws LinxError on failure.
+     */
     async suggest(
         value: T,
         source?: { ref?: string; notes?: string },
-    ): Promise<LinxResult<unknown>> {
+    ): Promise<void> {
         try {
-            const result = await this.api.request('factoids.suggest', {
+            await this.api.request('factoids.suggest', {
                 params: { id: this.id },
                 body: { value, source: source ?? {} },
             })
-            return success(result)
         } catch (err) {
-            return failure(convertTuyauError(err, 'POST', `/factoids/${this.id}/suggest`) as LinxError)
+            throw convertTuyauError(err, 'POST', `/factoids/${this.id}/suggest`)
         }
     }
 
@@ -69,29 +74,35 @@ export class RootFactoid<T = unknown> extends Factoid<T> {
      * Only available if the authenticated user has an approved ownership claim
      * for the entity this factoid belongs to.
      * Verified factoids receive an exponential confidence boost.
+     *
+     * Throws LinxError on failure.
      */
-    async verify(): Promise<LinxResult<unknown>> {
+    async verify(): Promise<void> {
         try {
-            const result = await this.api.request('verifications.store', {
+            await this.api.request('verifications.store', {
                 params: { id: this.id },
             } as any)
             this.verified = true
-            return success(result)
         } catch (err) {
-            return failure(convertTuyauError(err, 'POST', `/factoids/${this.id}/verify`) as LinxError)
+            throw convertTuyauError(err, 'POST', `/factoids/${this.id}/verify`)
         }
     }
 
-    async archive(): Promise<LinxResult<void>> {
+    /**
+     * Archive this factoid — marks it as no longer current.
+     * The factoid is not deleted; it becomes a historical record.
+     *
+     * Throws LinxError on failure.
+     */
+    async archive(): Promise<void> {
         try {
             await this.api.request('factoids.archive', {
                 params: { id: this.id },
             })
             this.isCurrent = false
             this.tracker.markArchived(this.entityId, this.id, this.attribute)
-            return success(undefined)
         } catch (err) {
-            return failure(convertTuyauError(err, 'DELETE', `/factoids/${this.id}`) as LinxError)
+            throw convertTuyauError(err, 'DELETE', `/factoids/${this.id}`)
         }
     }
 }

@@ -1,9 +1,7 @@
 import type { ApiClient } from './api-client.js'
-import type { LinxError } from './errors.js'
-import type { LinxResult } from './result.js'
 import type { SerializedFactoid } from './hydrated-entity.js'
+import type { Schemas } from '@linxhq/core'
 import { convertTuyauError } from './api-client.js'
-import { success, failure } from './result.js'
 
 /**
  * Base factoid class with shared properties and methods.
@@ -14,11 +12,11 @@ import { success, failure } from './result.js'
  * toString() returns the current value for natural template usage:
  *   `<h1>${suggestion}</h1>` // renders the value string
  */
-export class Factoid<T = unknown> {
+export class Factoid<T = unknown, TType extends Schemas = Schemas> {
     readonly id: string
     readonly entityId: string
     readonly attribute: string
-    readonly type: string
+    readonly type: TType
     value: T
     confidenceScore: number
     isCurrent: boolean
@@ -31,7 +29,7 @@ export class Factoid<T = unknown> {
         this.id = raw.id
         this.entityId = raw.entityId
         this.attribute = raw.attribute
-        this.type = raw.type
+        this.type = raw.type as unknown as TType
         this.value = raw.value as T
         this.confidenceScore = raw.confidenceScore
         this.isCurrent = raw.isCurrent
@@ -44,30 +42,42 @@ export class Factoid<T = unknown> {
         return this.confidenceScore
     }
 
-    async upvote(): Promise<LinxResult<void>> {
+    /**
+     * Upvote this factoid — increases confidence.
+     * Updates the local confidence score on success.
+     *
+     * Throws LinxError on failure.
+     */
+    async upvote(): Promise<void> {
+        let result: any
         try {
-            const result = await this.api.request('factoids.vote', {
+            result = await this.api.request('factoids.vote', {
                 params: { id: this.id },
                 body: { direction: 'up' },
             })
-            this.confidenceScore = result.confidenceScore
-            return success(undefined)
         } catch (err) {
-            return failure(convertTuyauError(err, 'POST', `/factoids/${this.id}/vote`) as LinxError)
+            throw convertTuyauError(err, 'POST', `/factoids/${this.id}/vote`)
         }
+        this.confidenceScore = result.confidenceScore
     }
 
-    async downvote(): Promise<LinxResult<void>> {
+    /**
+     * Downvote this factoid — decreases confidence (exponential penalty).
+     * Updates the local confidence score on success.
+     *
+     * Throws LinxError on failure.
+     */
+    async downvote(): Promise<void> {
+        let result: any
         try {
-            const result = await this.api.request('factoids.vote', {
+            result = await this.api.request('factoids.vote', {
                 params: { id: this.id },
                 body: { direction: 'down' },
             })
-            this.confidenceScore = result.confidenceScore
-            return success(undefined)
         } catch (err) {
-            return failure(convertTuyauError(err, 'POST', `/factoids/${this.id}/vote`) as LinxError)
+            throw convertTuyauError(err, 'POST', `/factoids/${this.id}/vote`)
         }
+        this.confidenceScore = result.confidenceScore
     }
 
     /**
@@ -77,19 +87,20 @@ export class Factoid<T = unknown> {
      * @param reason - Category: 'spam' | 'inaccurate' | 'incomplete' | 'defamatory' |
      *   'opinion_not_fact' | 'outdated' | 'duplicate' | 'offensive' | 'misleading' | 'copyright_violation'
      * @param description - Optional free-text explanation (max 2000 chars).
+     *
+     * Throws LinxError on failure.
      */
     async report(
         reason: string,
         description?: string,
-    ): Promise<LinxResult<unknown>> {
+    ): Promise<void> {
         try {
-            const result = await this.api.request('reports.store', {
+            await this.api.request('reports.store', {
                 params: { id: this.id },
                 body: { reason, description },
             } as any)
-            return success(result)
         } catch (err) {
-            return failure(convertTuyauError(err, 'POST', `/factoids/${this.id}/report`) as LinxError)
+            throw convertTuyauError(err, 'POST', `/factoids/${this.id}/report`)
         }
     }
 

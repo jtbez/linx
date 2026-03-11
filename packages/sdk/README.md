@@ -23,9 +23,8 @@ const client = new LinxClient({
 // Authenticate with an API key (generates DPoP keypair + session token automatically)
 const linx = await client.authenticate('oat_abc123...')
 
-// Fetch an entity by ID (resolves 1 level of entity-ref properties by default)
-const result = await linx.gasStation('550e8400-e29b-41d4-a716-446655440000')
-const station = result.data!
+// Fetch an entity by ID — returns HydratedEntity directly
+const station = await linx.gasStation('550e8400-e29b-41d4-a716-446655440000')
 
 // Access attributes directly
 console.log(station.name.current)         // "Membury Services"
@@ -45,7 +44,7 @@ const page2 = await linx.serviceStation.list()
 
 // Get total count (uses cached pagination meta — no extra request)
 const total = await linx.serviceStation.count()
-console.log(total.data)  // 42
+console.log(total)  // 42
 
 // Create an entity with initial factoids
 const newStation = await linx.gasStation.create({
@@ -76,10 +75,10 @@ When a `cryptoAdapter` is configured, `authenticate()` generates an ECDSA P-256 
 
 ## Type Accessors
 
-Every Schema.org type is available as a camelCase accessor on the client. Each accessor is both a function and an object with `list` and `create` methods.
+Every Schema.org type is available as a camelCase accessor on the client. Each accessor is both a function and an object with `list` and `create` methods. Methods return data directly and throw `LinxError` on failure.
 
 ```typescript
-// Fetch a single entity by ID (default depth=1)
+// Fetch a single entity by ID (default depth=1) — returns HydratedEntity
 const entity = await session.gasStation('uuid')
 const hotel = await session.hotel('uuid')
 const person = await session.person('uuid')
@@ -96,14 +95,14 @@ const nextStations = await session.serviceStation.list()
 // Explicit page request still works
 const page5 = await session.gasStation.list({ page: 5, perPage: 10 })
 
-// Get the total count (uses cached pagination meta if available)
+// Get the total count (uses cached pagination meta if available) — returns number
 const total = await session.serviceStation.count()
-console.log(total.data)  // 42
+console.log(total)  // 42
 
 // Count with filters
 const filtered = await session.gasStation.count({ additionalType: 'GasStation' })
 
-// Create a new entity
+// Create a new entity — returns HydratedEntity
 const created = await session.person.create({
     name: 'John Doe',
     email: 'john@example.com',
@@ -122,8 +121,7 @@ Entities returned by the SDK are `HydratedEntity` instances. The API returns a f
 ### Property Access
 
 ```typescript
-const result = await session.gasStation('uuid')
-const station = result.data!
+const station = await session.gasStation('uuid')
 
 // Scalar attributes return a RootFactoid
 station.name                  // RootFactoid<string>
@@ -143,9 +141,10 @@ station.name.setValue('New Name')
 station.operator.setValue('New Operator')
 
 // Persist all dirty factoids in one atomic batch call
-const result = await station.save()
-if (result.isError) {
-    console.error(result.error)
+try {
+    await station.save()
+} catch (error) {
+    console.error(error)
 }
 // Entity is re-assembled from the server response after a successful save
 ```
@@ -153,7 +152,7 @@ if (result.isError) {
 ### Methods
 
 ```typescript
-// Persist dirty factoids
+// Persist dirty factoids — returns Promise<void>, throws on failure
 await station.save()
 
 // Get a specific attribute
@@ -162,7 +161,7 @@ const name = station.getAttribute('name')
 // Get all attributes
 const attrs = station.getAttributes()
 
-// Archive an entity (marks all factoids as not current)
+// Archive an entity (marks all factoids as not current) — returns Promise<void>, throws on failure
 await station.archive()
 
 // String representation (uses name if available)
@@ -218,8 +217,10 @@ await station.save()
 
 ### Voting (both Factoid and RootFactoid)
 
+Returns `Promise<void>` and throws on failure. Confidence score is updated locally after a successful API call.
+
 ```typescript
-// Upvote — increases confidence (confidence score updated locally)
+// Upvote — increases confidence
 await station.name.upvote()
 
 // Downvote — decreases confidence (exponential penalty)
@@ -244,12 +245,15 @@ const nextPage = await station.name.suggestions.nextPage()
 const page3 = await station.name.suggestions.requestPage(3)
 
 // Suggest a new alternative value (creates isCurrent: false factoid)
+// Returns Promise<void>, throws on failure
 await station.name.suggest('Membury Service Area', {
     notes: 'Official name from highway signage',
 })
 ```
 
 ### Archiving (RootFactoid only)
+
+Returns `Promise<void>` and throws on failure.
 
 ```typescript
 // Mark a factoid as no longer current
@@ -325,7 +329,7 @@ const lastAgain = await session.gasStation.list()
 
 // count() uses cached pagination meta — no extra request needed
 const total = await session.gasStation.count()
-console.log(total.data)  // 42
+console.log(total)  // 42
 
 // Explicit page always fetches that specific page
 const explicit = await session.gasStation.list({ page: 1 })
@@ -372,23 +376,17 @@ Without a `cryptoAdapter`, the SDK operates normally using session tokens but wi
 
 ## Integration Example
 
-### React
+### React (React 19+)
 
-```typescript
+```tsx
 import { LinxClient, detectCryptoAdapter } from '@linxhq/sdk'
-import { useEffect, useState } from 'react'
+import { use, Suspense } from 'react'
+import type { HydratedEntity } from '@linxhq/sdk'
 
 const client = new LinxClient({ baseUrl: '/api', cryptoAdapter: detectCryptoAdapter() })
 
-function StationCard({ id }: { id: string }) {
-    const [station, setStation] = useState<Awaited<ReturnType<typeof client.gasStation>> | null>(null)
-
-    useEffect(() => {
-        client.gasStation(id).then(setStation)
-    }, [id])
-
-    if (!station) return <div>Loading...</div>
-
+function StationCard({ stationPromise }: { stationPromise: Promise<HydratedEntity> }) {
+    const station = use(stationPromise)
     return (
         <div>
             <h2>{station.name.current}</h2>
@@ -401,6 +399,14 @@ function StationCard({ id }: { id: string }) {
         </div>
     )
 }
+
+// Usage: create the promise outside render, pass it as a prop
+const linxPromise = client.authenticate('oat_abc123...')
+const stationPromise = linxPromise.then((linx) => linx.gasStation('uuid'))
+
+<Suspense fallback={<div>Loading...</div>}>
+    <StationCard stationPromise={stationPromise} />
+</Suspense>
 ```
 
 ### Node.js
@@ -416,12 +422,11 @@ const client = new LinxClient({
 async function main() {
     const linx = await client.authenticate('oat_abc123...')
 
-    // Create a new entity
-    const result = await linx.gasStation.create({
+    // Create a new entity — returns HydratedEntity directly
+    const station = await linx.gasStation.create({
         name: 'Test Station',
         operator: 'Shell',
     })
-    const station = result.data!
     console.log(`Created: ${station.id}`)
 
     // Mutate and save
@@ -430,7 +435,7 @@ async function main() {
 
     // List all gas stations
     const list = await linx.gasStation.list()
-    for (const s of list.data!) {
+    for (const s of list.data) {
         console.log(`${s.name.current} (confidence: ${s.name.confidence})`)
     }
 }
@@ -449,17 +454,15 @@ const logs = await session.logs({
     action: 'factoid.created',
 })
 
-if (logs.isSuccess) {
-    for (const entry of logs.data!) {
-        console.log(entry.action)      // 'factoid.created'
-        console.log(entry.metadata)    // { attribute: 'name', value: 'Shell' }
-        console.log(entry.requestId)   // trace all actions from one request
-    }
-
-    // Paginate
-    const nextPage = await logs.nextPage()
-    const page5 = await logs.requestPage(5)
+for (const entry of logs.data) {
+    console.log(entry.action)      // 'factoid.created'
+    console.log(entry.metadata)    // { attribute: 'name', value: 'Shell' }
+    console.log(entry.requestId)   // trace all actions from one request
 }
+
+// Paginate
+const nextPage = await logs.nextPage()
+const page5 = await logs.requestPage(5)
 ```
 
 ### Available Filters

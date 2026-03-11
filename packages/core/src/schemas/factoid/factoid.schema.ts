@@ -2,6 +2,7 @@ import vine from "@vinejs/vine";
 import { Source, LinxSource } from "./source.schema.js"
 import { Confidence } from "../confidence/index.js"
 import { LinxSystemFields } from "../system.js"
+import { SCHEMA_KEYS } from "../schema.org.js"
 
 /**
  * Factoid — a generic piece of information with its source.
@@ -44,7 +45,6 @@ export const Suggest = vine.object(suggestProps);
  *
  * @property id - System-assigned unique identifier (UUID).
  * @property entityId - FK to the Entity this factoid describes.
- * @property type - The Schema.org type of this factoid's value (e.g., "Place", "Text").
  * @property confidence - Cached confidence metadata (score + cache timestamp).
  * @property isCurrent - Whether this is the current accepted value for the attribute.
  * @property source - Full Linx provenance (type, userAccountId, applicationId, ref, notes).
@@ -53,7 +53,7 @@ export const LinxFactoid = vine.object({
     ...Factoid.getProperties(),
     ...LinxSystemFields.getProperties(),
     entityId: vine.string().uuid(),
-    type: vine.string(),
+    type: vine.enum(SCHEMA_KEYS),
     confidence: Confidence,
     isCurrent: vine.boolean(),
     source: LinxSource,

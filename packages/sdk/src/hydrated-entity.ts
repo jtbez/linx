@@ -1,17 +1,33 @@
 import type { ApiClient } from './api-client.js'
-import type { LinxError } from './errors.js'
-import type { LinxResult } from './result.js'
 import type { ChangeTracker } from './change-tracker.js'
 import { convertTuyauError } from './api-client.js'
-import { success, failure } from './result.js'
 import { RootFactoid } from './root-factoid.js'
 import { isEntityType } from '@linxhq/vine-schema-dot-org/classify'
 import { isKeyedType, extractCollectionKey } from '@linxhq/core/factoid-map'
-import type { LocationFeatureSpecification } from '@linxhq/vine-schema-dot-org'
-import type { PropertyValue } from '@linxhq/vine-schema-dot-org'
+import type { Schemas } from '@linxhq/core'
+import type { LocationFeatureSpecification, PropertyValue } from '@linxhq/vine-schema-dot-org'
+import type {
+    GeoCoordinates, GeoShape, PostalAddress, ContactPoint,
+    OpeningHoursSpecification, QuantitativeValue, MonetaryAmount,
+    NutritionInformation, PriceSpecification, OwnershipInfo,
+    InteractionCounter, OfferShippingDetails, TypeAndQuantityNode,
+    EngineSpecification, ExchangeRateSpecification,
+    CDCPMDRecord, DatedMoneySpecification, RepaymentSpecification,
+    QuantitativeValueDistribution, PostalCodeRangeSpecification,
+} from '@linxhq/vine-schema-dot-org'
 
 /** Schema.org types that produce FactoidMaps at runtime (mirrors KEYED_TYPES) */
 type KeyedStructuredValue = LocationFeatureSpecification | PropertyValue
+
+/** StructuredValue descendants that are NOT keyed (not FactoidMap) and NOT entities */
+type NonKeyedStructuredValue =
+    | GeoCoordinates | GeoShape | PostalAddress | ContactPoint
+    | OpeningHoursSpecification | QuantitativeValue | MonetaryAmount
+    | NutritionInformation | PriceSpecification | OwnershipInfo
+    | InteractionCounter | OfferShippingDetails | TypeAndQuantityNode
+    | EngineSpecification | ExchangeRateSpecification
+    | CDCPMDRecord | DatedMoneySpecification | RepaymentSpecification
+    | QuantitativeValueDistribution | PostalCodeRangeSpecification
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
@@ -30,7 +46,7 @@ export type SerializedFactoid = {
     entityId: string
     attribute: string
     value: unknown
-    type: string
+    type: Schemas
     confidenceScore: number
     isCurrent: boolean
     verified: boolean
@@ -66,18 +82,25 @@ type ElementType<T> =
  * Maps a single Schema.org property type to its hydrated form.
  *
  * - Scalars (string, number, boolean) → RootFactoid<T>
- * - Object types → FactoidMap<T> for keyed StructuredValue types (e.g., amenityFeature)
- *                   or RootFactoid<HydratedEntityInstance<T>> for entity refs (e.g., containedInPlace)
- *   Runtime discrimination via isKeyedType() and isEntityType().
+ * - Keyed StructuredValues (LocationFeatureSpecification, PropertyValue) → FactoidMap<T>
+ * - Non-keyed StructuredValues (GeoCoordinates, PostalAddress, etc.) → RootFactoid<T>
+ *   with a literal `.type` discriminant for union narrowing
+ * - Entity refs (Place, Organization, etc.) → RootFactoid<HydratedEntityInstance<T>>
+ *
+ * For union property types (e.g., geo: GeoShape | GeoCoordinates), TypeScript distributes
+ * across the union creating a discriminated union on `.type`:
+ *   RootFactoid<GeoShape, "GeoShape"> | RootFactoid<GeoCoordinates, "GeoCoordinates">
  */
 type HydratedProperty<T> =
     T extends string | number | boolean | null | undefined
         ? RootFactoid<T>
         : T extends KeyedStructuredValue
             ? FactoidMap<T>
-            : T extends Record<string, any>
-                ? RootFactoid<HydratedEntityInstance<T>>
-                : RootFactoid<T>
+            : T extends NonKeyedStructuredValue & { type?: infer TName extends Schemas }
+                ? RootFactoid<T, TName>
+                : T extends Record<string, any>
+                    ? RootFactoid<HydratedEntityInstance<T>>
+                    : RootFactoid<T>
 
 /**
  * Maps Schema.org property keys to their hydrated types.
@@ -222,9 +245,11 @@ class HydratedEntityImpl {
      * Persist all dirty factoids for this entity.
      * Sends only changed factoids via POST /:type/:entityId/factoids/batch.
      * Re-assembles the entity from the server response so local state stays fresh.
+     *
+     * Throws LinxError on failure.
      */
-    async save(): Promise<LinxResult<void>> {
-        if (!this.tracker.hasDirty(this.id)) return success(undefined)
+    async save(): Promise<void> {
+        if (!this.tracker.hasDirty(this.id)) return
 
         const ops = this.tracker.getDirty(this.id)
         const operations = ops.map((op) => {
@@ -232,23 +257,23 @@ class HydratedEntityImpl {
             return { attribute: op.attribute, value: op.value, source: op.kind === 'new' ? op.source : undefined }
         })
 
+        let response: EntityResponse
         try {
-            const response = await this.api.request('factoids.batchStore', {
+            response = await this.api.request('factoids.batchStore', {
                 params: { type: this.type, entityId: this.id },
                 body: { operations },
-            })
-            this.tracker.clear(this.id)
-
-            // Re-assemble from fresh server response
-            const rawRoot = response.entities.find((e) => e.id === this.id)
-            if (rawRoot) {
-                this.attrs = {}
-                this.assemble(rawRoot, response, new Set([this.id]))
-            }
-
-            return success(undefined)
+            }) as EntityResponse
         } catch (err) {
-            return failure(convertTuyauError(err, 'POST', `/${this.type}/${this.id}/factoids/batch`) as LinxError)
+            throw convertTuyauError(err, 'POST', `/${this.type}/${this.id}/factoids/batch`)
+        }
+
+        this.tracker.clear(this.id)
+
+        // Re-assemble from fresh server response
+        const rawRoot = response.entities.find((e) => e.id === this.id)
+        if (rawRoot) {
+            this.attrs = {}
+            this.assemble(rawRoot, response, new Set([this.id]))
         }
     }
 
@@ -256,33 +281,35 @@ class HydratedEntityImpl {
      * Submit an ownership claim for this entity.
      * The authenticated user must be linked to the Person/Organization
      * referenced in the "owner" factoid.
+     *
+     * Throws LinxError on failure.
      */
-    async claim(evidence?: string): Promise<LinxResult<unknown>> {
+    async claim(evidence?: string): Promise<void> {
         try {
-            const result = await this.api.request('claims.store', {
+            await this.api.request('claims.store', {
                 params: { type: this.type, id: this.id },
                 body: { evidence },
             } as any)
-            return success(result)
         } catch (err) {
-            return failure(convertTuyauError(err, 'POST', `/${this.type}/${this.id}/claim`) as LinxError)
+            throw convertTuyauError(err, 'POST', `/${this.type}/${this.id}/claim`)
         }
     }
 
-    async archive(): Promise<LinxResult<void>> {
-        const results: LinxResult<void>[] = []
+    /**
+     * Archive this entity by marking all its factoids as not current.
+     *
+     * Throws LinxError on failure.
+     */
+    async archive(): Promise<void> {
         for (const attrValue of Object.values(this.attrs)) {
             if (attrValue instanceof RootFactoid) {
-                results.push(await attrValue.archive())
+                await attrValue.archive()
             } else {
                 for (const factoid of Object.values(attrValue as FactoidMap)) {
-                    results.push(await factoid.archive())
+                    await factoid.archive()
                 }
             }
         }
-        const err = results.find((r) => r.isError)
-        if (err && err.error) return failure(err.error)
-        return success(undefined)
     }
 
     toString(): string {

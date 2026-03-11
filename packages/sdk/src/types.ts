@@ -1,7 +1,7 @@
 import type { SchemaTypeMap, ActivityLogContract } from '@linxhq/core'
 import type { HydratedEntityInstance } from './hydrated-entity.js'
 import type { RootFactoid } from './root-factoid.js'
-import type { LinxResult, PaginatedResult } from './result.js'
+import type { PaginatedResult } from './result.js'
 
 // ── Inspection types ───────────────────────────────────────────────
 
@@ -61,20 +61,20 @@ export interface AuthAsResult {
 
 /** Read-only accessor: get by ID, list, and count */
 interface ReadAccessor<TData> {
-    (id: string, options?: { depth?: number }): Promise<LinxResult<HydratedEntityInstance<TData>>>
-    get(id: string, options?: { depth?: number }): Promise<LinxResult<HydratedEntityInstance<TData>>>
+    (id: string, options?: { depth?: number }): Promise<HydratedEntityInstance<TData>>
+    get(id: string, options?: { depth?: number }): Promise<HydratedEntityInstance<TData>>
     list(options?: {
         page?: number
         perPage?: number
         filters?: Record<string, string>
     }): Promise<PaginatedResult<HydratedEntityInstance<TData>>>
     /** Get the total count of entities for this type. Uses cached pagination meta when available. */
-    count(filters?: Record<string, string>): Promise<LinxResult<number>>
+    count(filters?: Record<string, string>): Promise<number>
 }
 
 /** Create accessor */
 interface CreateAccessor<TData> {
-    create(data: Record<string, unknown>): Promise<LinxResult<HydratedEntityInstance<TData>>>
+    create(data: Record<string, unknown>): Promise<HydratedEntityInstance<TData>>
 }
 
 /**

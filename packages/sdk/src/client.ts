@@ -9,9 +9,8 @@ import { PaginatedCollection } from './paginated-collection.js'
 import { StateManager } from './state-manager.js'
 import { ChangeTracker } from './change-tracker.js'
 import { resolveSchemaType, resolveRootType } from './type-map.js'
-import { success, failure, paginatedSuccess, paginatedFailure } from './result.js'
-import type { LinxError } from './errors.js'
-import type { LinxResult, PaginatedResult, PaginationMeta } from './result.js'
+import { paginatedSuccess } from './result.js'
+import type { PaginatedResult, PaginationMeta } from './result.js'
 import type {
     LinxClientConfig,
     LinxClientInstance,
@@ -42,8 +41,8 @@ function requirePermission(permissions: EffectivePermission[], action: Permissio
  *   session.hotel.list()        → GET /LocalBusiness?additionalType=Hotel
  *   session.person.create(data) → POST /Person/batch
  *
- * All API calls are made through the Tuyau client, providing full type safety
- * from the API's controller return types and VineJS validators.
+ * All API calls throw LinxError on failure — use try/catch or .catch()
+ * to handle errors. Successful calls return data directly.
  */
 class SessionClientImpl {
     private api: ApiClient
@@ -79,34 +78,35 @@ class SessionClientImpl {
         const accessor = async (
             id: string,
             options?: { depth?: number },
-        ): Promise<LinxResult<HydratedEntity>> => {
+        ): Promise<HydratedEntity> => {
+            requirePermission(perms, 'read')
+
+            const cached = this.state.getEntity(id)
+            if (cached && !options?.depth) return cached
+
+            const depth = options?.depth ?? 1
+            // Note: query params are cast because Tuyau's registry generator
+            // doesn't auto-detect query validators on GET routes. Response
+            // type is still fully inferred from the controller return type.
+            let response: EntityResponse
             try {
-                requirePermission(perms, 'read')
-
-                const cached = this.state.getEntity(id)
-                if (cached && !options?.depth) return success(cached)
-
-                const depth = options?.depth ?? 1
-                // Note: query params are cast because Tuyau's registry generator
-                // doesn't auto-detect query validators on GET routes. Response
-                // type is still fully inferred from the controller return type.
-                const response = await this.api.request('entities.show', {
+                response = await this.api.request('entities.show', {
                     params: { type: rootType, id },
                     query: { depth },
-                } as any)
-
-                this._lastRawResponse = response as EntityResponse
-
-                const rawRoot = response.entities.find((e) => e.id === id)
-                if (!rawRoot) throw new Error(`Entity ${id} not found in response`)
-
-                const entity = new HydratedEntity(rawRoot, response, this.api, this.tracker)
-                this.state.setEntity(id, entity)
-                this.registerAndLoadSuggestions(entity)
-                return success(entity)
+                } as any) as EntityResponse
             } catch (err) {
-                return failure(convertTuyauError(err, 'GET', `/${rootType}/${id}`) as LinxError)
+                throw convertTuyauError(err, 'GET', `/${rootType}/${id}`)
             }
+
+            this._lastRawResponse = response
+
+            const rawRoot = response.entities.find((e) => e.id === id)
+            if (!rawRoot) throw new Error(`Entity ${id} not found in response`)
+
+            const entity = new HydratedEntity(rawRoot, response, this.api, this.tracker)
+            this.state.setEntity(id, entity)
+            this.registerAndLoadSuggestions(entity)
+            return entity
         }
 
         /** Build a cache key for pagination state from type + filters */
@@ -118,10 +118,11 @@ class SessionClientImpl {
             perPage: number,
             filters?: Record<string, string>,
         ): Promise<PaginatedResult<HydratedEntity>> => {
-            try {
-                requirePermission(perms, 'read')
+            requirePermission(perms, 'read')
 
-                const response = await this.api.request('entities.index', {
+            let response: EntityResponse & { meta: PaginationMeta }
+            try {
+                response = await this.api.request('entities.index', {
                     params: { type: rootType },
                     query: {
                         depth: 1,
@@ -130,38 +131,38 @@ class SessionClientImpl {
                         ...(schemaType !== rootType ? { additionalType: schemaType } : {}),
                         ...filters,
                     },
-                } as any)
-
-                this._lastRawResponse = response as EntityResponse
-
-                const rootIds = new Set(
-                    response.entities
-                        .filter((e) => e.type === rootType ||
-                            (schemaType !== rootType && e.additionalType === schemaType))
-                        .map((e) => e.id)
-                )
-
-                const entities = response.entities
-                    .filter((e) => rootIds.has(e.id))
-                    .map((rawEntity) => {
-                        const entity = new HydratedEntity(rawEntity, response, this.api, this.tracker)
-                        this.state.setEntity(rawEntity.id, entity)
-                        this.registerAndLoadSuggestions(entity)
-                        return entity
-                    })
-
-                const meta = response.meta as PaginationMeta
-                const key = paginationKey(filters)
-                this.state.setPagination(key, meta, entities.map((e) => e.id))
-
-                return paginatedSuccess(
-                    entities,
-                    meta,
-                    (p) => fetchPage(p, perPage, filters),
-                )
+                } as any) as EntityResponse & { meta: PaginationMeta }
             } catch (err) {
-                return paginatedFailure(convertTuyauError(err, 'GET', `/${rootType}`) as LinxError)
+                throw convertTuyauError(err, 'GET', `/${rootType}`)
             }
+
+            this._lastRawResponse = response
+
+            const rootIds = new Set(
+                response.entities
+                    .filter((e) => e.type === rootType ||
+                        (schemaType !== rootType && e.additionalType === schemaType))
+                    .map((e) => e.id)
+            )
+
+            const entities = response.entities
+                .filter((e) => rootIds.has(e.id))
+                .map((rawEntity) => {
+                    const entity = new HydratedEntity(rawEntity, response, this.api, this.tracker)
+                    this.state.setEntity(rawEntity.id, entity)
+                    this.registerAndLoadSuggestions(entity)
+                    return entity
+                })
+
+            const meta = response.meta as PaginationMeta
+            const key = paginationKey(filters)
+            this.state.setPagination(key, meta, entities.map((e) => e.id))
+
+            return paginatedSuccess(
+                entities,
+                meta,
+                (p) => fetchPage(p, perPage, filters),
+            )
         }
 
         accessor.get = accessor
@@ -215,58 +216,52 @@ class SessionClientImpl {
          * returns the total from cached metadata without a network request.
          * Otherwise, fetches page 1 to obtain the pagination metadata.
          */
-        accessor.count = async (filters?: Record<string, string>): Promise<LinxResult<number>> => {
-            try {
-                requirePermission(perms, 'read')
+        accessor.count = async (filters?: Record<string, string>): Promise<number> => {
+            requirePermission(perms, 'read')
 
-                const key = paginationKey(filters)
-                const existing = this.state.getPagination(key)
-                if (existing) {
-                    return success(existing.meta.total)
-                }
-
-                // No cached data — fetch page 1 to get pagination meta
-                const result = await fetchPage(1, 1, filters)
-                if (result.isError) {
-                    return failure(result.error!)
-                }
-                return success(result.meta!.total)
-            } catch (err) {
-                return failure(convertTuyauError(err, 'GET', `/${rootType}`) as LinxError)
+            const key = paginationKey(filters)
+            const existing = this.state.getPagination(key)
+            if (existing) {
+                return existing.meta.total
             }
+
+            // No cached data — fetch page 1 to get pagination meta
+            const result = await fetchPage(1, 1, filters)
+            return result.meta.total
         }
 
-        accessor.create = async (data: Record<string, unknown>): Promise<LinxResult<HydratedEntity>> => {
+        accessor.create = async (data: Record<string, unknown>): Promise<HydratedEntity> => {
+            requirePermission(perms, 'create')
+
+            const attributes = Object.entries(data).map(([attribute, value]) => ({
+                attribute,
+                value,
+                source: {},
+            }))
+
+            let response: EntityResponse
             try {
-                requirePermission(perms, 'create')
-
-                const attributes = Object.entries(data).map(([attribute, value]) => ({
-                    attribute,
-                    value,
-                    source: {},
-                }))
-
-                const response = await this.api.request('entities.batchStore', {
+                response = await this.api.request('entities.batchStore', {
                     params: { type: rootType },
                     body: {
                         type: rootType,
                         additionalType: schemaType !== rootType ? schemaType : undefined,
                         attributes,
                     },
-                } as any)
-
-                this._lastRawResponse = response as EntityResponse
-
-                const rawRoot = response.entities[0]
-                if (!rawRoot) throw new Error('No entity in batch create response')
-
-                const entity = new HydratedEntity(rawRoot, response, this.api, this.tracker)
-                this.state.setEntity(rawRoot.id, entity)
-                this.registerAndLoadSuggestions(entity)
-                return success(entity)
+                } as any) as EntityResponse
             } catch (err) {
-                return failure(convertTuyauError(err, 'POST', `/${rootType}/batch`) as LinxError)
+                throw convertTuyauError(err, 'POST', `/${rootType}/batch`)
             }
+
+            this._lastRawResponse = response
+
+            const rawRoot = response.entities[0]
+            if (!rawRoot) throw new Error('No entity in batch create response')
+
+            const entity = new HydratedEntity(rawRoot, response, this.api, this.tracker)
+            this.state.setEntity(rawRoot.id, entity)
+            this.registerAndLoadSuggestions(entity)
+            return entity
         }
 
         return accessor
@@ -375,24 +370,25 @@ class SessionClientImpl {
         page?: number
         perPage?: number
     }): Promise<PaginatedResult<any>> {
-        try {
-            const page = filters?.page ?? 1
-            const perPage = filters?.perPage ?? 20
+        const page = filters?.page ?? 1
+        const perPage = filters?.perPage ?? 20
 
-            const response = await this.api.request('claims.index', {
+        let response: any
+        try {
+            response = await this.api.request('claims.index', {
                 query: { ...filters, page, perPage },
             } as any)
-
-            const data = (response as any).data
-            const meta = (response as any).meta as PaginationMeta
-
-            const fetchPage = (p: number) =>
-                this.claims({ ...filters, page: p, perPage })
-
-            return paginatedSuccess(data, meta, fetchPage)
         } catch (err) {
-            return paginatedFailure(convertTuyauError(err, 'GET', '/claims') as LinxError)
+            throw convertTuyauError(err, 'GET', '/claims')
         }
+
+        const data = response.data
+        const meta = response.meta as PaginationMeta
+
+        const fetchPage = (p: number) =>
+            this.claims({ ...filters, page: p, perPage })
+
+        return paginatedSuccess(data, meta, fetchPage)
     }
 
     /**
@@ -404,25 +400,26 @@ class SessionClientImpl {
         page?: number
         perPage?: number
     }): Promise<PaginatedResult<any>> {
-        try {
-            const page = filters?.page ?? 1
-            const perPage = filters?.perPage ?? 20
+        const page = filters?.page ?? 1
+        const perPage = filters?.perPage ?? 20
 
-            const response = await this.api.request('reports.index', {
+        let response: any
+        try {
+            response = await this.api.request('reports.index', {
                 params: { id: factoidId },
                 query: { ...filters, page, perPage },
             } as any)
-
-            const data = (response as any).data
-            const meta = (response as any).meta as PaginationMeta
-
-            const fetchPage = (p: number) =>
-                this.reports(factoidId, { ...filters, page: p, perPage })
-
-            return paginatedSuccess(data, meta, fetchPage)
         } catch (err) {
-            return paginatedFailure(convertTuyauError(err, 'GET', `/factoids/${factoidId}/reports`) as LinxError)
+            throw convertTuyauError(err, 'GET', `/factoids/${factoidId}/reports`)
         }
+
+        const data = response.data
+        const meta = response.meta as PaginationMeta
+
+        const fetchPage = (p: number) =>
+            this.reports(factoidId, { ...filters, page: p, perPage })
+
+        return paginatedSuccess(data, meta, fetchPage)
     }
 
     /**
@@ -438,28 +435,29 @@ class SessionClientImpl {
         page?: number
         perPage?: number
     }): Promise<PaginatedResult<any>> {
+        if (!hasPermission(this.permissions, 'read_own_logs') && !hasPermission(this.permissions, 'read_all_logs')) {
+            throw new PermissionError('read_own_logs')
+        }
+
+        const page = filters?.page ?? 1
+        const perPage = filters?.perPage ?? 20
+
+        let response: any
         try {
-            if (!hasPermission(this.permissions, 'read_own_logs') && !hasPermission(this.permissions, 'read_all_logs')) {
-                throw new PermissionError('read_own_logs')
-            }
-
-            const page = filters?.page ?? 1
-            const perPage = filters?.perPage ?? 20
-
-            const response = await this.api.request('logs.index', {
+            response = await this.api.request('logs.index', {
                 query: { ...filters, page, perPage },
             } as any)
-
-            const data = (response as any).data
-            const meta = (response as any).meta as PaginationMeta
-
-            const fetchPage = (p: number) =>
-                this.logs({ ...filters, page: p, perPage })
-
-            return paginatedSuccess(data, meta, fetchPage)
         } catch (err) {
-            return paginatedFailure(convertTuyauError(err, 'GET', '/logs') as LinxError)
+            throw convertTuyauError(err, 'GET', '/logs')
         }
+
+        const data = response.data
+        const meta = response.meta as PaginationMeta
+
+        const fetchPage = (p: number) =>
+            this.logs({ ...filters, page: p, perPage })
+
+        return paginatedSuccess(data, meta, fetchPage)
     }
 }
 
