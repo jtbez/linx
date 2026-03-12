@@ -53,3 +53,6 @@ export { toDbSchema, FactoidDb, UserAccountDb, SoftwareApplicationDb } from "./d
 // FactoidMap — keyed collections of factoids sharing the same attribute
 export { KEYED_TYPES, isKeyedType, extractCollectionKey, FactoidMapEntry } from "./factoid-map/index.js";
 
+// Schema.org schemas registry (runtime object keyed by type name)
+export { Schemas, SCHEMA_KEYS } from "./schema.org.js";
+

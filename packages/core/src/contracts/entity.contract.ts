@@ -1,7 +1,7 @@
 import type { Contract } from "../types/index.js";
 import type { Infer } from '@vinejs/vine/types';
 import { Entity as EntityInputSchema, LinxEntity as LinxEntitySchema } from "../schemas/entity/index.js";
-import type { Schemas } from "../types/index.js";
+import type { SchemaKey } from "@linxhq/vine-schema-dot-org";
 
 export default interface Entity extends Contract {
     /**
@@ -44,7 +44,7 @@ type EntityHydrations = {
     /**
      * The Schema.org root type of this entity.
      */
-    type: Schemas;
+    type: SchemaKey;
 
     /**
      * Archives the Entity, marking it as inactive.

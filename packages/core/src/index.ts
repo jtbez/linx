@@ -39,8 +39,11 @@ export { toDbSchema, FactoidDb, UserAccountDb, SoftwareApplicationDb } from "./s
 // FactoidMap — keyed collections of factoids sharing the same attribute
 export { KEYED_TYPES, isKeyedType, extractCollectionKey, FactoidMapEntry } from "./schemas/index.js";
 
+// Schema.org schemas registry (runtime object)
+export { Schemas, SCHEMA_KEYS } from "./schemas/index.js";
+
 // Types
-export type { Schemas, Contract, SchemaTypeMap } from "./types/index.js";
+export type { Contract, SchemaTypeMap } from "./types/index.js";
 
 // Filter types
 export type { FilterOp, FilterField, FilterCondition, EntityField } from "./types/index.js";

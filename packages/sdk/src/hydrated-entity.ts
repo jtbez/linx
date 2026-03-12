@@ -4,7 +4,7 @@ import { convertTuyauError } from './api-client.js'
 import { RootFactoid } from './root-factoid.js'
 import { isEntityType } from '@linxhq/vine-schema-dot-org/classify'
 import { isKeyedType, extractCollectionKey } from '@linxhq/core/factoid-map'
-import type { Schemas } from '@linxhq/core'
+import type { SchemaKey } from '@linxhq/vine-schema-dot-org'
 import type { LocationFeatureSpecification, PropertyValue } from '@linxhq/vine-schema-dot-org'
 import type {
     GeoCoordinates, GeoShape, PostalAddress, ContactPoint,
@@ -46,7 +46,7 @@ export type SerializedFactoid = {
     entityId: string
     attribute: string
     value: unknown
-    type: Schemas
+    type: SchemaKey
     confidenceScore: number
     isCurrent: boolean
     verified: boolean
@@ -93,14 +93,14 @@ type ElementType<T> =
  */
 type HydratedProperty<T> =
     T extends string | number | boolean | null | undefined
-        ? RootFactoid<T>
-        : T extends KeyedStructuredValue
-            ? FactoidMap<T>
-            : T extends NonKeyedStructuredValue & { type?: infer TName extends Schemas }
-                ? RootFactoid<T, TName>
-                : T extends Record<string, any>
-                    ? RootFactoid<HydratedEntityInstance<T>>
-                    : RootFactoid<T>
+    ? RootFactoid<T>
+    : T extends KeyedStructuredValue
+    ? FactoidMap<T>
+    : T extends NonKeyedStructuredValue & { type?: infer TName extends SchemaKey }
+    ? RootFactoid<T, TName>
+    : T extends Record<string, any>
+    ? RootFactoid<HydratedEntityInstance<T>>
+    : RootFactoid<T>
 
 /**
  * Maps Schema.org property keys to their hydrated types.

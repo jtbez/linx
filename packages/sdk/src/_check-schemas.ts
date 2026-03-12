@@ -1,4 +1,4 @@
-import type { Schemas } from '@linxhq/core'
+import type { SchemaKey } from '@linxhq/vine-schema-dot-org'
 import type { RootFactoid } from './root-factoid.js'
 import type { HydratedEntityInstance } from './hydrated-entity.js'
 import type { GeoCoordinates, GeoShape } from '@linxhq/vine-schema-dot-org'
