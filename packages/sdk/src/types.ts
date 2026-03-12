@@ -74,6 +74,23 @@ interface ReadAccessor<TData> {
         /** How many levels of entity refs to resolve in the response (default: 1, max: 5) */
         depth?: number
     }): Promise<PaginatedResult<HydratedEntityInstance<TData>>>
+    /**
+     * Create a scoped accessor with baked-in filter conditions.
+     * The returned accessor carries the filters internally so you don't repeat them:
+     * ```typescript
+     * const motorways = session.place.where([
+     *   { field: 'additionalType', op: 'eq', value: 'motorway' }
+     * ])
+     * motorways.list()       // filtered
+     * motorways.state()      // cached filtered results
+     * motorways.count()      // filtered count
+     * motorways.subscribe(cb) // filtered subscription
+     * ```
+     */
+    where(
+        conditions: FilterCondition<TData>[],
+        options?: { filterDepth?: number; depth?: number; perPage?: number },
+    ): Omit<ReadAccessor<TData>, 'where'>
     /** Synchronous access to cached entities. Triggers a background list() if empty. */
     state(filters?: Record<string, string>, where?: FilterCondition<TData>[]): HydratedEntityInstance<TData>[]
     /** Synchronous count from cached pagination meta. Triggers a background list() if empty. Returns 0 until data arrives. */

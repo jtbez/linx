@@ -325,6 +325,49 @@ class SessionClientImpl {
             return this.state.subscribe(key, callback)
         }
 
+        accessor.where = (
+            conditions: FilterCondition[],
+            opts?: { filterDepth?: number; depth?: number; perPage?: number },
+        ) => {
+            const scopedPerPage = opts?.perPage ?? 20
+            const scopedFilterDepth = opts?.filterDepth
+            const scopedDepth = opts?.depth
+
+            const scoped = async (id: string, options?: { depth?: number }) => {
+                return accessor(id, options)
+            }
+            scoped.get = scoped
+
+            scoped.list = async (options?: {
+                page?: number
+                perPage?: number
+                filters?: Record<string, string>
+                where?: FilterCondition[]
+                filterDepth?: number
+                depth?: number
+            }) => {
+                return accessor.list({
+                    ...options,
+                    where: options?.where ?? conditions,
+                    filterDepth: options?.filterDepth ?? scopedFilterDepth,
+                    depth: options?.depth ?? scopedDepth,
+                    perPage: options?.perPage ?? scopedPerPage,
+                })
+            }
+
+            scoped.state = (filters?: Record<string, string>, where?: FilterCondition[]) =>
+                accessor.state(filters, where ?? conditions)
+            scoped.count = (filters?: Record<string, string>, where?: FilterCondition[]) =>
+                accessor.count(filters, where ?? conditions)
+            scoped.subscribe = (
+                callback: () => void,
+                filters?: Record<string, string>,
+                where?: FilterCondition[],
+            ) => accessor.subscribe(callback, filters, where ?? conditions)
+
+            return scoped
+        }
+
         accessor.create = async (data: Record<string, unknown>): Promise<HydratedEntity> => {
             requirePermission(perms, 'create')
 
