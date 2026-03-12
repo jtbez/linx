@@ -107,7 +107,7 @@ type HydratedProperty<T> =
  * Runtime discrimination via factoid.type + isEntityType().
  */
 type HydratedAttributes<TData> = {
-    [K in keyof TData]-?: HydratedProperty<
+    [K in keyof TData]?: HydratedProperty<
         NonNullable<ElementType<NonNullable<TData[K]>>>
     >
 }
