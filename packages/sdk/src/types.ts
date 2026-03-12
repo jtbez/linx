@@ -68,8 +68,15 @@ interface ReadAccessor<TData> {
         perPage?: number
         filters?: Record<string, string>
     }): Promise<PaginatedResult<HydratedEntityInstance<TData>>>
-    /** Get the total count of entities for this type. Uses cached pagination meta when available. */
-    count(filters?: Record<string, string>): Promise<number>
+    /** Synchronous access to cached entities. Triggers a background list() if empty. */
+    state(filters?: Record<string, string>): HydratedEntityInstance<TData>[]
+    /** Synchronous count from cached pagination meta. Triggers a background list() if empty. Returns 0 until data arrives. */
+    count(filters?: Record<string, string>): number
+    /**
+     * Subscribe to state changes for this type. Callback fires when list() updates state.
+     * Returns an unsubscribe function.
+     */
+    subscribe(callback: () => void, filters?: Record<string, string>): () => void
 }
 
 /** Create accessor */
@@ -101,7 +108,7 @@ export type PermittedTypeAccessor<TData, P extends PermissionAction[]> =
  * Suggestions are always available (pre-loaded sync property, not permission-gated).
  */
 export type PermittedFactoid<T, P extends PermissionAction[]> =
-    Pick<RootFactoid<T>, 'id' | 'entityId' | 'attribute' | 'type' | 'value' | 'confidenceScore' | 'isCurrent' | 'verified' | 'current' | 'confidence' | 'source' | 'suggestions' | 'toString'> &
+    Pick<RootFactoid<T>, 'id' | 'entityId' | 'attribute' | 'type' | 'value' | 'confidenceScore' | 'isCurrent' | 'verified' | 'confidence' | 'source' | 'suggestions' | 'toString'> &
     ('vote' extends P[number] ? Pick<RootFactoid<T>, 'upvote' | 'downvote'> : unknown) &
     ('suggest' extends P[number] ? Pick<RootFactoid<T>, 'suggest'> : unknown) &
     ('archive' extends P[number] ? Pick<RootFactoid<T>, 'archive'> : unknown) &

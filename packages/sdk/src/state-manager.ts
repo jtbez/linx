@@ -28,8 +28,9 @@ export class StateManager {
     private entities = new Map<string, HydratedEntity>()
     private factoids = new Map<string, RootFactoid>()
     private pagination = new Map<string, TypePaginationState>()
+    private listeners = new Map<string, Set<() => void>>()
 
-    constructor(private tracker: ChangeTracker) {}
+    constructor(private tracker: ChangeTracker) { }
 
     // ── Entity operations ───────────────────────────────────────
 
@@ -79,6 +80,31 @@ export class StateManager {
                 ? [...existing.entityIds, ...entityIds]
                 : entityIds,
         })
+        this.notify(key)
+    }
+
+    // ── Subscription system ─────────────────────────────────────
+
+    /** Subscribe to pagination state changes for a given key. Returns an unsubscribe function. */
+    subscribe(key: string, callback: () => void): () => void {
+        let set = this.listeners.get(key)
+        if (!set) {
+            set = new Set()
+            this.listeners.set(key, set)
+        }
+        set.add(callback)
+        return () => {
+            set!.delete(callback)
+            if (set!.size === 0) this.listeners.delete(key)
+        }
+    }
+
+    /** Notify all listeners for a pagination key */
+    private notify(key: string): void {
+        const set = this.listeners.get(key)
+        if (set) {
+            for (const cb of set) cb()
+        }
     }
 
     /**
@@ -97,7 +123,7 @@ export class StateManager {
                 id: factoid.id,
                 entityId: factoid.entityId,
                 attribute: factoid.attribute,
-                value: factoid.current,
+                value: factoid.value,
                 type: factoid.type,
                 confidenceScore: factoid.confidenceScore,
             }

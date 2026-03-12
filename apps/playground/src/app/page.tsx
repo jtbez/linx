@@ -140,7 +140,7 @@ export default function Home() {
       const constructed = {
         factoidId: firstAttr.id,
         attribute: firstAttr.attribute,
-        value: firstAttr.current,
+        value: firstAttr.value,
         newConfidence: firstAttr.confidenceScore,
       };
       addLog(`${direction} on ${firstAttr.attribute}`, code, constructed, "success");

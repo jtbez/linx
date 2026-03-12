@@ -42,9 +42,18 @@ const page1 = await linx.serviceStation.list()  // only ServiceStation, not all 
 // Calling list() again auto-fetches the next page
 const page2 = await linx.serviceStation.list()
 
-// Get total count (uses cached pagination meta — no extra request)
-const total = await linx.serviceStation.count()
+// Synchronous access to cached state (triggers background fetch if empty)
+const stations = linx.serviceStation.state()
+
+// Synchronous count (triggers background fetch if empty, returns 0 until loaded)
+const total = linx.serviceStation.count()
 console.log(total)  // 42
+
+// Subscribe to reactive state updates
+const unsub = linx.serviceStation.subscribe(() => {
+    console.log('Updated:', linx.serviceStation.state())
+})
+unsub() // unsubscribe when done
 
 // Create an entity with initial factoids
 const newStation = await linx.gasStation.create({
@@ -75,7 +84,7 @@ When a `cryptoAdapter` is configured, `authenticate()` generates an ECDSA P-256 
 
 ## Type Accessors
 
-Every Schema.org type is available as a camelCase accessor on the client. Each accessor is both a function and an object with `list` and `create` methods. Methods return data directly and throw `LinxError` on failure.
+Every Schema.org type is available as a camelCase accessor on the client. Each accessor is both a function and an object with `list`, `state`, `count`, `subscribe`, and `create` methods. Methods return data directly and throw `LinxError` on failure.
 
 ```typescript
 // Fetch a single entity by ID (default depth=1) — returns HydratedEntity
@@ -95,12 +104,18 @@ const nextStations = await session.serviceStation.list()
 // Explicit page request still works
 const page5 = await session.gasStation.list({ page: 5, perPage: 10 })
 
-// Get the total count (uses cached pagination meta if available) — returns number
-const total = await session.serviceStation.count()
+// Synchronous access to cached entities (triggers background fetch if empty)
+const stations = session.serviceStation.state()
+
+// Synchronous count from cached meta (triggers background fetch if empty)
+const total = session.serviceStation.count()
 console.log(total)  // 42
 
-// Count with filters
-const filtered = await session.gasStation.count({ additionalType: 'GasStation' })
+// Subscribe to reactive state updates
+const unsub = session.serviceStation.subscribe(() => {
+    console.log('Stations:', session.serviceStation.state())
+    console.log('Count:', session.serviceStation.count())
+})
 
 // Create a new entity — returns HydratedEntity
 const created = await session.person.create({
@@ -315,7 +330,7 @@ client.clearCache()
 
 ### Pagination State
 
-The SDK tracks which page was last fetched for each type+filter combination. This enables auto-advancing `list()` and zero-cost `count()`:
+The SDK tracks which page was last fetched for each type+filter combination. This enables auto-advancing `list()`, synchronous `state()` and `count()`, and reactive `subscribe()`:
 
 ```typescript
 // First list() fetches page 1
@@ -327,9 +342,15 @@ const page2 = await session.gasStation.list()
 // When already on the last page, returns cached entities (no request)
 const lastAgain = await session.gasStation.list()
 
-// count() uses cached pagination meta — no extra request needed
-const total = await session.gasStation.count()
-console.log(total)  // 42
+// Synchronous access — returns cached data, triggers background fetch if empty
+const stations = session.gasStation.state()  // HydratedEntity[]
+const total = session.gasStation.count()     // number
+
+// Subscribe to reactive state updates
+const unsub = session.gasStation.subscribe(() => {
+    console.log('Updated:', session.gasStation.state())
+    console.log('Count:', session.gasStation.count())
+})
 
 // Explicit page always fetches that specific page
 const explicit = await session.gasStation.list({ page: 1 })

@@ -34,7 +34,7 @@ export function formatAttributes(entity: HydratedEntity): Record<string, unknown
   for (const [key, val] of Object.entries(attrs)) {
     if (val instanceof RootFactoid) {
       out[key] = {
-        value: val.current,
+        value: val.value,
         confidence: val.confidenceScore,
         factoidId: val.id,
       };
@@ -42,7 +42,7 @@ export function formatAttributes(entity: HydratedEntity): Record<string, unknown
       const sub: Record<string, unknown> = {};
       for (const [subKey, subVal] of Object.entries(val as Record<string, RootFactoid>)) {
         sub[subKey] = {
-          value: subVal.current,
+          value: subVal.value,
           confidence: subVal.confidenceScore,
           factoidId: subVal.id,
         };

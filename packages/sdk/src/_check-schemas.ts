@@ -13,5 +13,5 @@ const geo = station.geo
 
 // Discriminated union narrowing via .type
 if (geo?.type === "GeoCoordinates") {
-    const lat = geo.current.latitude
+    const lat = geo.value.latitude
 }

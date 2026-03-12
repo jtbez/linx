@@ -1,7 +1,6 @@
 import type { ApiClient } from './api-client.js'
 import type { ChangeTracker } from './change-tracker.js'
 import type { SerializedFactoid } from './hydrated-entity.js'
-import type { Schemas } from '@linxhq/core'
 import { convertTuyauError } from './api-client.js'
 import { Factoid } from './factoid.js'
 import { PaginatedCollection } from './paginated-collection.js'
@@ -18,7 +17,7 @@ import { PaginatedCollection } from './paginated-collection.js'
  * toString() returns the current value for natural template usage:
  *   `<h1>${entity.name}</h1>` // renders the value string
  */
-export class RootFactoid<T = unknown, TType extends Schemas = Schemas> extends Factoid<T, TType> {
+export class RootFactoid<T = unknown, TType extends string = string> extends Factoid<T, TType> {
     suggestions: PaginatedCollection<Factoid<T>>
 
     private tracker: ChangeTracker
@@ -27,10 +26,6 @@ export class RootFactoid<T = unknown, TType extends Schemas = Schemas> extends F
         super(raw, api)
         this.tracker = tracker
         this.suggestions = new PaginatedCollection<Factoid<T>>()
-    }
-
-    get current(): T {
-        return this.value
     }
 
     /**

@@ -30,10 +30,12 @@ const test = firstStation?.amenityFeature["atm"].suggestions[0]?.value.name
 // Structured value properties use discriminated union narrowing via .type:
 const geoFactoid = firstStation?.geo
 if (geoFactoid?.type === "GeoCoordinates") {
-    const test1 = geoFactoid.current.latitude;              // ✓ narrowed to GeoCoordinates
-    const test2 = geoFactoid.current.longitude;             // ✓
+    const test1 = geoFactoid.value.latitude;              // ✓ narrowed to GeoCoordinates
+    const test2 = geoFactoid.value.longitude;             // ✓
 }
-const nameValue = firstStation?.name.suggestions[0]?.value                 // Factoid<string> — typed!
+
+firstStation?.geo.type === "GeoCoordinates" && firstStation.geo.value.latitude
+const nameValue = firstStation?.name.suggestions[0]?.value               // string — typed!
 const nameConfidence = firstStation?.name.suggestions[0]?.confidence       // number
 // Entity-type properties are RootFactoid<HydratedEntityInstance<T>> at runtime.
 // FactoidMap-typed properties (e.g., amenityFeature) are Record<string, RootFactoid<T>>.
@@ -62,8 +64,8 @@ const deepResult = await linx.gasStation('id', { depth: 2 })
         console.log(isEntityType(containedIn.type!))           // true
 
         // Entity-type factoid values are HydratedEntity instances at runtime
-        const place = containedIn.value                        // HydratedEntity<Place> at runtime
-        console.log(place.name.current)                        // "Membury" — nested entity property
+        const place = containedIn.value                      // HydratedEntity<Place> at runtime
+        console.log(place.name.value)                        // "Membury" — nested entity property
 
         // Entity-type factoids have suggestions just like scalar factoids
         const altPlace = containedIn.suggestions[0]?.value
@@ -81,13 +83,13 @@ const session = await linx.as(registration.userAccount.id)
 // 5. Fetch and read a single entity
 await session.gasStation("id")
     .then(async (station) => {
-        console.log(station.name.current)                      // "Membury Services"
+        console.log(station.name.value)                      // "Membury Services"
         console.log(station.name.confidence)                   // 0.95
         console.log(station.name.type)                // "Text"
 
         // Suggestions are pre-loaded — access synchronously
         console.log(station.name.suggestions.length)           // number of alternative values
-        console.log(station.name.suggestions[0]?.value)        // first suggestion's value (typed)
+        console.log(station.name.suggestions[0]?.value)      // first suggestion's value (typed)
         console.log(station.name.suggestions[0]?.confidence)   // first suggestion's confidence
 
         // Vote on a suggestion
@@ -104,7 +106,7 @@ await session.gasStation("id")
 
         // Mutate a value locally — does NOT call the API yet
         station.name.setValue('Membury Service Area')
-        console.log(station.name.current)                      // "Membury Service Area" (local only)
+        console.log(station.name.value)                      // "Membury Service Area" (local only)
 
         // Persist all dirty factoids in a single batch call
         await station
@@ -112,7 +114,7 @@ await session.gasStation("id")
             .catch((error) => console.error('Save failed:', error))
 
         // Entity is re-assembled from server response after save
-        console.log(station.name.current)
+        console.log(station.name.value)
     })      // GET /Place/uuid?depth=1
 
 
@@ -135,7 +137,7 @@ await session.gasStation("id")
 
         // Suggestions are pre-loaded synchronously — no getSuggestions() needed
         console.log(station.name.suggestions.length)           // number of alternative values
-        console.log(station.name.suggestions[0]?.value)        // suggestion value (typed)
+        console.log(station.name.suggestions[0]?.value)      // suggestion value (typed)
 
         // Paginate through suggestions if there are many
         await station.name.suggestions.nextPage()

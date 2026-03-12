@@ -1,6 +1,5 @@
 import type { ApiClient } from './api-client.js'
 import type { SerializedFactoid } from './hydrated-entity.js'
-import type { Schemas } from '@linxhq/core'
 import { convertTuyauError } from './api-client.js'
 
 /**
@@ -12,7 +11,7 @@ import { convertTuyauError } from './api-client.js'
  * toString() returns the current value for natural template usage:
  *   `<h1>${suggestion}</h1>` // renders the value string
  */
-export class Factoid<T = unknown, TType extends Schemas = Schemas> {
+export class Factoid<T = unknown, TType extends string = string> {
     readonly id: string
     readonly entityId: string
     readonly attribute: string

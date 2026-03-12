@@ -210,24 +210,70 @@ class SessionClientImpl {
         }
 
         /**
-         * Get the total count of entities for this type.
+         * Synchronous access to cached entities for this type.
          *
-         * If pagination data already exists in state (from a prior list() call),
-         * returns the total from cached metadata without a network request.
-         * Otherwise, fetches page 1 to obtain the pagination metadata.
+         * Returns all entities currently in state from previous list() calls.
+         * If no data exists in state, triggers a background list() fetch —
+         * subscribers will be notified when data arrives.
          */
-        accessor.count = async (filters?: Record<string, string>): Promise<number> => {
-            requirePermission(perms, 'read')
-
+        accessor.state = (filters?: Record<string, string>): HydratedEntity[] => {
             const key = paginationKey(filters)
             const existing = this.state.getPagination(key)
+
+            if (existing) {
+                return existing.entityIds
+                    .map((id) => this.state.getEntity(id))
+                    .filter((e): e is HydratedEntity => e != null)
+            }
+
+            // No data — fire background list() to populate state
+            if (hasPermission(perms, 'read')) {
+                fetchPage(1, 20, filters).catch(() => {})
+            }
+            return []
+        }
+
+        /**
+         * Synchronous count of entities for this type.
+         *
+         * Returns the total from cached pagination metadata if available.
+         * If no data exists in state, triggers a background list() fetch —
+         * subscribers will be notified when data arrives. Returns 0 until then.
+         */
+        accessor.count = (filters?: Record<string, string>): number => {
+            const key = paginationKey(filters)
+            const existing = this.state.getPagination(key)
+
             if (existing) {
                 return existing.meta.total
             }
 
-            // No cached data — fetch page 1 to get pagination meta
-            const result = await fetchPage(1, 1, filters)
-            return result.meta.total
+            // No cached data — fire background list() to populate state
+            if (hasPermission(perms, 'read')) {
+                fetchPage(1, 1, filters).catch(() => {})
+            }
+            return 0
+        }
+
+        /**
+         * Subscribe to state changes for this type.
+         *
+         * The callback is invoked whenever list() completes and updates
+         * the internal state for this type+filters combination.
+         * Returns an unsubscribe function.
+         *
+         * Compatible with React's useSyncExternalStore:
+         *   useSyncExternalStore(
+         *     (cb) => session.gasStation.subscribe(cb),
+         *     () => session.gasStation.state(),
+         *   )
+         */
+        accessor.subscribe = (
+            callback: () => void,
+            filters?: Record<string, string>,
+        ): (() => void) => {
+            const key = paginationKey(filters)
+            return this.state.subscribe(key, callback)
         }
 
         accessor.create = async (data: Record<string, unknown>): Promise<HydratedEntity> => {

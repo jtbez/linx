@@ -314,7 +314,7 @@ class HydratedEntityImpl {
 
     toString(): string {
         const name = this.attrs['name']
-        if (name instanceof RootFactoid) return String(name.current)
+        if (name instanceof RootFactoid) return String(name.value)
         return `${this.type}:${this.id}`
     }
 }
