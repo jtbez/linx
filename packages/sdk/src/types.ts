@@ -90,7 +90,7 @@ interface ReadAccessor<TData> {
     where(
         conditions: FilterCondition<TData>[],
         options?: { filterDepth?: number; depth?: number; perPage?: number },
-    ): Omit<ReadAccessor<TData>, 'where'>
+    ): QueryAccessor<TData>
     /** Synchronous access to cached entities. Triggers a background list() if empty. */
     state(filters?: Record<string, string>, where?: FilterCondition<TData>[]): HydratedEntityInstance<TData>[]
     /** Synchronous count from cached pagination meta. Triggers a background list() if empty. Returns 0 until data arrives. */
@@ -101,6 +101,9 @@ interface ReadAccessor<TData> {
      */
     subscribe(callback: () => void, filters?: Record<string, string>, where?: FilterCondition<TData>[]): () => void
 }
+
+/** A scoped query returned by `.where()` — same as ReadAccessor but without `.where()` */
+export type QueryAccessor<TData> = Omit<ReadAccessor<TData>, 'where'>
 
 /** Create accessor */
 interface CreateAccessor<TData> {

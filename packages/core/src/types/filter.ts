@@ -66,10 +66,35 @@ type DotPaths<T, D extends number = 2> =
  */
 export type FilterField<TData> = EntityField | DotPaths<TData>
 
+// ── Path value resolution ──────────────────────────────────────────
+
+/** Resolve the value type at a dot-notation path within a Schema.org type */
+type PathValue<T, P extends string> =
+    P extends `${infer K}.${infer Rest}`
+        ? K extends keyof T
+            ? PathValue<NonNullable<Unwrap<NonNullable<T[K]>>>, Rest>
+            : unknown
+        : P extends keyof T
+            ? NonNullable<Unwrap<NonNullable<T[P]>>>
+            : unknown
+
+/** Map entity-level fields to their value types */
+type EntityFieldValue<F extends string> =
+    F extends 'type' | 'additionalType' ? string :
+    F extends 'createdAt' | 'updatedAt' ? string | Date :
+    unknown
+
+/** Resolve the value type for a filter field — entity-level or dot-path */
+type ResolveFilterValue<TData, F extends string> =
+    F extends EntityField ? EntityFieldValue<F> : PathValue<TData, F>
+
 // ── Filter condition ────────────────────────────────────────────────
 
 /**
  * A single filter condition for the search endpoint.
+ *
+ * The `value` type is inferred from the `field` path — for example,
+ * `{ field: 'name', ... }` narrows `value` to the type of the `name` property.
  *
  * @template TData - The Schema.org type, used to narrow `field` to valid paths.
  *
@@ -85,8 +110,10 @@ export type FilterField<TData> = EntityField | DotPaths<TData>
  * { field: 'amenityFeature', op: 'exists' }
  * ```
  */
-export interface FilterCondition<TData = Record<string, unknown>> {
-    field: FilterField<TData>
-    op: FilterOp
-    value?: unknown
-}
+export type FilterCondition<TData = Record<string, unknown>> = {
+    [F in FilterField<TData>]: {
+        field: F
+        op: FilterOp
+        value?: ResolveFilterValue<TData, F & string> | ResolveFilterValue<TData, F & string>[]
+    }
+}[FilterField<TData>]
