@@ -42,6 +42,10 @@ export { KEYED_TYPES, isKeyedType, extractCollectionKey, FactoidMapEntry } from 
 // Types
 export type { Schemas, Contract, SchemaTypeMap } from "./types/index.js";
 
+// Filter types
+export type { FilterOp, FilterField, FilterCondition, EntityField } from "./types/index.js";
+export { ENTITY_LEVEL_FIELDS } from "./types/index.js";
+
 // Model column types (derived from VineJS schemas for Lucid interface merging)
 export type {
     EntityColumns,

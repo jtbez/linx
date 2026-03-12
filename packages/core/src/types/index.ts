@@ -4,6 +4,9 @@ import type { SchemaTypeMap } from "./schema-type-map.js";
 
 export type { Schemas };
 export type { Contract, SchemaTypeMap };
+export type { FilterOp, FilterField, FilterCondition, EntityField } from "./filter.js";
+export { ENTITY_LEVEL_FIELDS } from "./filter.js";
+
 export type {
     EntityColumns,
     FactoidColumns,

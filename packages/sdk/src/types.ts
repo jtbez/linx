@@ -1,4 +1,4 @@
-import type { SchemaTypeMap, ActivityLogContract } from '@linxhq/core'
+import type { SchemaTypeMap, ActivityLogContract, FilterCondition } from '@linxhq/core'
 import type { HydratedEntityInstance } from './hydrated-entity.js'
 import type { RootFactoid } from './root-factoid.js'
 import type { PaginatedResult } from './result.js'
@@ -67,16 +67,22 @@ interface ReadAccessor<TData> {
         page?: number
         perPage?: number
         filters?: Record<string, string>
+        /** Structured filter conditions with type-safe field paths and operators */
+        where?: FilterCondition<TData>[]
+        /** How many levels of entity refs filters can traverse (default: 2, max: 3) */
+        filterDepth?: number
+        /** How many levels of entity refs to resolve in the response (default: 1, max: 5) */
+        depth?: number
     }): Promise<PaginatedResult<HydratedEntityInstance<TData>>>
     /** Synchronous access to cached entities. Triggers a background list() if empty. */
-    state(filters?: Record<string, string>): HydratedEntityInstance<TData>[]
+    state(filters?: Record<string, string>, where?: FilterCondition<TData>[]): HydratedEntityInstance<TData>[]
     /** Synchronous count from cached pagination meta. Triggers a background list() if empty. Returns 0 until data arrives. */
-    count(filters?: Record<string, string>): number
+    count(filters?: Record<string, string>, where?: FilterCondition<TData>[]): number
     /**
      * Subscribe to state changes for this type. Callback fires when list() updates state.
      * Returns an unsubscribe function.
      */
-    subscribe(callback: () => void, filters?: Record<string, string>): () => void
+    subscribe(callback: () => void, filters?: Record<string, string>, where?: FilterCondition<TData>[]): () => void
 }
 
 /** Create accessor */

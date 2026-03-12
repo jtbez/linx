@@ -11,6 +11,7 @@ import { ChangeTracker } from './change-tracker.js'
 import { resolveSchemaType, resolveRootType } from './type-map.js'
 import { paginatedSuccess } from './result.js'
 import type { PaginatedResult, PaginationMeta } from './result.js'
+import type { FilterCondition } from '@linxhq/core'
 import type {
     LinxClientConfig,
     LinxClientInstance,
@@ -109,31 +110,62 @@ class SessionClientImpl {
             return entity
         }
 
-        /** Build a cache key for pagination state from type + filters */
-        const paginationKey = (filters?: Record<string, string>) =>
-            JSON.stringify({ schemaType, ...filters })
+        /** Build a cache key for pagination state from type + filters + where */
+        const paginationKey = (filters?: Record<string, string>, where?: FilterCondition[]) => {
+            const sortedWhere = where?.length
+                ? [...where].sort((a, b) => a.field.localeCompare(b.field))
+                : undefined
+            return JSON.stringify({ schemaType, ...filters, ...(sortedWhere ? { where: sortedWhere } : {}) })
+        }
 
         const fetchPage = async (
             page: number,
             perPage: number,
             filters?: Record<string, string>,
+            where?: FilterCondition[],
+            filterDepth?: number,
+            depth?: number,
         ): Promise<PaginatedResult<HydratedEntity>> => {
             requirePermission(perms, 'read')
 
             let response: EntityResponse & { meta: PaginationMeta }
-            try {
-                response = await this.api.request('entities.index', {
-                    params: { type: rootType },
-                    query: {
-                        depth: 1,
-                        page,
-                        perPage,
-                        ...(schemaType !== rootType ? { additionalType: schemaType } : {}),
-                        ...filters,
-                    },
-                } as any) as EntityResponse & { meta: PaginationMeta }
-            } catch (err) {
-                throw convertTuyauError(err, 'GET', `/${rootType}`)
+
+            if (where?.length) {
+                // Use POST /:type/search for structured filter queries
+                try {
+                    response = await this.api.request('entities.search', {
+                        params: { type: rootType },
+                        body: {
+                            where: where.map((w) => ({
+                                ...w,
+                                // Inject additionalType filter for subtypes
+                                ...(schemaType !== rootType && w.field === 'additionalType' ? {} : {}),
+                            })),
+                            page,
+                            perPage,
+                            depth: depth ?? 1,
+                            filterDepth,
+                        },
+                    } as any) as EntityResponse & { meta: PaginationMeta }
+                } catch (err) {
+                    throw convertTuyauError(err, 'POST', `/${rootType}/search`)
+                }
+            } else {
+                // Use existing GET /:type for simple queries
+                try {
+                    response = await this.api.request('entities.index', {
+                        params: { type: rootType },
+                        query: {
+                            depth: depth ?? 1,
+                            page,
+                            perPage,
+                            ...(schemaType !== rootType ? { additionalType: schemaType } : {}),
+                            ...filters,
+                        },
+                    } as any) as EntityResponse & { meta: PaginationMeta }
+                } catch (err) {
+                    throw convertTuyauError(err, 'GET', `/${rootType}`)
+                }
             }
 
             this._lastRawResponse = response
@@ -155,13 +187,13 @@ class SessionClientImpl {
                 })
 
             const meta = response.meta as PaginationMeta
-            const key = paginationKey(filters)
+            const key = paginationKey(filters, where)
             this.state.setPagination(key, meta, entities.map((e) => e.id))
 
             return paginatedSuccess(
                 entities,
                 meta,
-                (p) => fetchPage(p, perPage, filters),
+                (p) => fetchPage(p, perPage, filters, where, filterDepth, depth),
             )
         }
 
@@ -174,19 +206,35 @@ class SessionClientImpl {
          * - If no page is provided and data already exists in state for this
          *   type+filters, automatically fetches the next page.
          * - If no data exists in state, fetches page 1.
+         *
+         * Supports structured `where` conditions for rich filtering:
+         * ```typescript
+         * session.gasStation.list({
+         *   where: [
+         *     { field: 'containedInPlace.name', op: 'eq', value: 'M1' }
+         *   ]
+         * })
+         * ```
          */
         accessor.list = async (options?: {
             page?: number
             perPage?: number
             filters?: Record<string, string>
+            where?: FilterCondition[]
+            filterDepth?: number
+            depth?: number
         }): Promise<PaginatedResult<HydratedEntity>> => {
             const perPage = options?.perPage ?? 20
+            const where = options?.where
+            const filters = options?.filters
+            const filterDepth = options?.filterDepth
+            const depth = options?.depth
 
             if (options?.page != null) {
-                return fetchPage(options.page, perPage, options?.filters)
+                return fetchPage(options.page, perPage, filters, where, filterDepth, depth)
             }
 
-            const key = paginationKey(options?.filters)
+            const key = paginationKey(filters, where)
             const existing = this.state.getPagination(key)
 
             if (existing) {
@@ -200,13 +248,13 @@ class SessionClientImpl {
                     return paginatedSuccess(
                         cachedEntities,
                         existing.meta,
-                        (p) => fetchPage(p, perPage, options?.filters),
+                        (p) => fetchPage(p, perPage, filters, where, filterDepth, depth),
                     )
                 }
-                return fetchPage(nextPage, perPage, options?.filters)
+                return fetchPage(nextPage, perPage, filters, where, filterDepth, depth)
             }
 
-            return fetchPage(1, perPage, options?.filters)
+            return fetchPage(1, perPage, filters, where, filterDepth, depth)
         }
 
         /**
@@ -216,8 +264,8 @@ class SessionClientImpl {
          * If no data exists in state, triggers a background list() fetch —
          * subscribers will be notified when data arrives.
          */
-        accessor.state = (filters?: Record<string, string>): HydratedEntity[] => {
-            const key = paginationKey(filters)
+        accessor.state = (filters?: Record<string, string>, where?: FilterCondition[]): HydratedEntity[] => {
+            const key = paginationKey(filters, where)
             const existing = this.state.getPagination(key)
 
             if (existing) {
@@ -228,7 +276,7 @@ class SessionClientImpl {
 
             // No data — fire background list() to populate state
             if (hasPermission(perms, 'read')) {
-                fetchPage(1, 20, filters).catch(() => {})
+                fetchPage(1, 20, filters, where).catch(() => {})
             }
             return []
         }
@@ -240,8 +288,8 @@ class SessionClientImpl {
          * If no data exists in state, triggers a background list() fetch —
          * subscribers will be notified when data arrives. Returns 0 until then.
          */
-        accessor.count = (filters?: Record<string, string>): number => {
-            const key = paginationKey(filters)
+        accessor.count = (filters?: Record<string, string>, where?: FilterCondition[]): number => {
+            const key = paginationKey(filters, where)
             const existing = this.state.getPagination(key)
 
             if (existing) {
@@ -250,7 +298,7 @@ class SessionClientImpl {
 
             // No cached data — fire background list() to populate state
             if (hasPermission(perms, 'read')) {
-                fetchPage(1, 1, filters).catch(() => {})
+                fetchPage(1, 1, filters, where).catch(() => {})
             }
             return 0
         }
@@ -271,8 +319,9 @@ class SessionClientImpl {
         accessor.subscribe = (
             callback: () => void,
             filters?: Record<string, string>,
+            where?: FilterCondition[],
         ): (() => void) => {
-            const key = paginationKey(filters)
+            const key = paginationKey(filters, where)
             return this.state.subscribe(key, callback)
         }
 
