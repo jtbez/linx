@@ -12,6 +12,7 @@ export type {
     EffectivePermission,
     PermittedTypeAccessor,
     QueryAccessor,
+    AccessorMeta,
     StateSnapshot,
 } from './types.js'
 export type { HydratedEntity, HydratedEntityInstance, SerializedEntity, SerializedFactoid, EntityResponse, FactoidMap } from './hydrated-entity.js'

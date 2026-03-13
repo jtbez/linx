@@ -20,6 +20,7 @@ import type {
     StateSnapshot,
     EffectivePermission,
     PermissionAction,
+    AccessorMeta,
 } from './types.js'
 
 function hasPermission(permissions: EffectivePermission[], action: PermissionAction): boolean {
@@ -258,6 +259,23 @@ class SessionClientImpl {
         }
 
         /**
+         * Synchronous metadata about the current state.
+         *
+         * Returns the count of entities currently in local state and the
+         * total available on the server. Unlike count(), does NOT trigger
+         * a background list() fetch when no data exists.
+         */
+        accessor.meta = (filters?: Record<string, string>, where?: FilterCondition[]): AccessorMeta => {
+            const key = paginationKey(filters, where)
+            const existing = this.state.getPagination(key)
+
+            return {
+                count: existing?.entityIds.length ?? 0,
+                total: existing?.meta.total ?? null,
+            }
+        }
+
+        /**
          * Synchronous access to cached entities for this type.
          *
          * Returns all entities currently in state from previous list() calls.
@@ -355,6 +373,8 @@ class SessionClientImpl {
                 })
             }
 
+            scoped.meta = (filters?: Record<string, string>, where?: FilterCondition[]) =>
+                accessor.meta(filters, where ?? conditions)
             scoped.state = (filters?: Record<string, string>, where?: FilterCondition[]) =>
                 accessor.state(filters, where ?? conditions)
             scoped.count = (filters?: Record<string, string>, where?: FilterCondition[]) =>

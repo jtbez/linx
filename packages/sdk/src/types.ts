@@ -82,6 +82,7 @@ interface ReadAccessor<TData> {
      *   { field: 'additionalType', op: 'eq', value: 'motorway' }
      * ])
      * motorways.list()       // filtered
+     * motorways.meta()       // { count, total } without fetching
      * motorways.state()      // cached filtered results
      * motorways.count()      // filtered count
      * motorways.subscribe(cb) // filtered subscription
@@ -91,6 +92,8 @@ interface ReadAccessor<TData> {
         conditions: FilterCondition<TData>[],
         options?: { filterDepth?: number; depth?: number; perPage?: number },
     ): QueryAccessor<TData>
+    /** Synchronous metadata about the current state. Unlike count(), does not trigger a background fetch. */
+    meta(filters?: Record<string, string>, where?: FilterCondition<TData>[]): AccessorMeta
     /** Synchronous access to cached entities. Triggers a background list() if empty. */
     state(filters?: Record<string, string>, where?: FilterCondition<TData>[]): HydratedEntityInstance<TData>[]
     /** Synchronous count from cached pagination meta. Triggers a background list() if empty. Returns 0 until data arrives. */
@@ -100,6 +103,14 @@ interface ReadAccessor<TData> {
      * Returns an unsubscribe function.
      */
     subscribe(callback: () => void, filters?: Record<string, string>, where?: FilterCondition<TData>[]): () => void
+}
+
+/** Synchronous metadata about the current accessor state (no network calls) */
+export interface AccessorMeta {
+    /** Number of entities currently held in local state for this accessor */
+    count: number
+    /** Total entities available on the server, or null if no data has been fetched yet */
+    total: number | null
 }
 
 /** A scoped query returned by `.where()` — same as ReadAccessor but without `.where()` */
