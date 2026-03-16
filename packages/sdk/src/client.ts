@@ -174,8 +174,9 @@ class SessionClientImpl {
 
             const rootIds = new Set(
                 response.entities
-                    .filter((e) => e.type === rootType ||
-                        (schemaType !== rootType && e.additionalType === schemaType))
+                    .filter((e) => schemaType !== rootType
+                        ? e.additionalType === schemaType
+                        : e.type === rootType)
                     .map((e) => e.id)
             )
 
