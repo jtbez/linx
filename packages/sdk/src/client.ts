@@ -21,6 +21,7 @@ import type {
     EffectivePermission,
     PermissionAction,
     AccessorMeta,
+    FacetEntry,
 } from './types.js'
 
 function hasPermission(permissions: EffectivePermission[], action: PermissionAction): boolean {
@@ -259,6 +260,41 @@ class SessionClientImpl {
         }
 
         /**
+         * Synchronous access to cached facet values for an attribute.
+         *
+         * Returns cached facets immediately if available, otherwise triggers
+         * a background fetch and returns []. Subscribers will be notified
+         * when the data arrives.
+         */
+        const facetsBaseKey = `facets:${schemaType}`
+
+        accessor.facets = (attribute: string): FacetEntry[] => {
+            const facetsKey = JSON.stringify({ schemaType, attribute })
+            const cached = this.state.getFacets(facetsKey)
+            if (cached) return cached
+
+            // No cached data — fire background fetch to populate state
+            if (hasPermission(perms, 'read')) {
+                (async () => {
+                    try {
+                        const response = await this.api.request('entities.facets', {
+                            params: { type: rootType },
+                            query: {
+                                attribute,
+                                ...(schemaType !== rootType ? { additionalType: schemaType } : {}),
+                            },
+                        } as any) as { data: FacetEntry[] }
+                        this.state.setFacets(facetsKey, response.data)
+                        this.state.notify(facetsBaseKey)
+                    } catch {
+                        // swallow — caller can retry
+                    }
+                })()
+            }
+            return []
+        }
+
+        /**
          * Synchronous metadata about the current state.
          *
          * Returns the count of entities currently in local state and the
@@ -340,7 +376,9 @@ class SessionClientImpl {
             where?: FilterCondition[],
         ): (() => void) => {
             const key = paginationKey(filters, where)
-            return this.state.subscribe(key, callback)
+            const unsubPagination = this.state.subscribe(key, callback)
+            const unsubFacets = this.state.subscribe(facetsBaseKey, callback)
+            return () => { unsubPagination(); unsubFacets() }
         }
 
         accessor.where = (
@@ -373,6 +411,7 @@ class SessionClientImpl {
                 })
             }
 
+            scoped.facets = (attribute: string) => accessor.facets(attribute)
             scoped.meta = (filters?: Record<string, string>, where?: FilterCondition[]) =>
                 accessor.meta(filters, where ?? conditions)
             scoped.state = (filters?: Record<string, string>, where?: FilterCondition[]) =>

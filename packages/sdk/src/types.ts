@@ -1,4 +1,7 @@
 import type { SchemaTypeMap, ActivityLogContract, FilterCondition } from '@linxhq/core'
+
+/** Unwrap array/readonly-array types to their element type; non-arrays pass through */
+type UnwrapArray<T> = T extends readonly (infer U)[] ? U : T
 import type { HydratedEntityInstance } from './hydrated-entity.js'
 import type { RootFactoid } from './root-factoid.js'
 import type { PaginatedResult } from './result.js'
@@ -82,6 +85,7 @@ interface ReadAccessor<TData> {
      *   { field: 'additionalType', op: 'eq', value: 'motorway' }
      * ])
      * motorways.list()       // filtered
+     * motorways.facets('amenityFeature') // distinct values
      * motorways.meta()       // { count, total } without fetching
      * motorways.state()      // cached filtered results
      * motorways.count()      // filtered count
@@ -92,6 +96,17 @@ interface ReadAccessor<TData> {
         conditions: FilterCondition<TData>[],
         options?: { filterDepth?: number; depth?: number; perPage?: number },
     ): QueryAccessor<TData>
+    /**
+     * Synchronous access to cached facet values for an attribute.
+     * Returns cached data immediately, or [] while triggering a background fetch.
+     * Subscribe to be notified when facets data arrives.
+     *
+     * ```typescript
+     * const amenities = session.serviceStation.facets('amenityFeature')
+     * // [{ value: { key: 'wifi', ... }, count: 42 }, ...]
+     * ```
+     */
+    facets<K extends keyof TData & string>(attribute: K): FacetEntry<UnwrapArray<NonNullable<TData[K]>>>[]
     /** Synchronous metadata about the current state. Unlike count(), does not trigger a background fetch. */
     meta(filters?: Record<string, string>, where?: FilterCondition<TData>[]): AccessorMeta
     /** Synchronous access to cached entities. Triggers a background list() if empty. */
@@ -103,6 +118,14 @@ interface ReadAccessor<TData> {
      * Returns an unsubscribe function.
      */
     subscribe(callback: () => void, filters?: Record<string, string>, where?: FilterCondition<TData>[]): () => void
+}
+
+/** A distinct factoid value with the count of entities that have it */
+export interface FacetEntry<T = unknown> {
+    /** The factoid value */
+    value: T
+    /** Number of entities with this value */
+    count: number
 }
 
 /** Synchronous metadata about the current accessor state (no network calls) */

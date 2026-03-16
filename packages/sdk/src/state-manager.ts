@@ -3,6 +3,7 @@ import type { ChangeTracker } from './change-tracker.js'
 import type { RootFactoid } from './root-factoid.js'
 import type { Factoid } from './factoid.js'
 import type { PaginationMeta } from './result.js'
+import type { FacetEntry } from './types.js'
 import { PaginatedCollection } from './paginated-collection.js'
 
 /** Tracks pagination state for a specific schema type */
@@ -28,6 +29,7 @@ export class StateManager {
     private entities = new Map<string, HydratedEntity>()
     private factoids = new Map<string, RootFactoid>()
     private pagination = new Map<string, TypePaginationState>()
+    private facets = new Map<string, FacetEntry[]>()
     private listeners = new Map<string, Set<() => void>>()
 
     constructor(private tracker: ChangeTracker) { }
@@ -61,6 +63,7 @@ export class StateManager {
         this.entities.clear()
         this.factoids.clear()
         this.pagination.clear()
+        this.facets.clear()
     }
 
     // ── Pagination tracking ─────────────────────────────────────
@@ -83,6 +86,19 @@ export class StateManager {
         this.notify(key)
     }
 
+    // ── Facets cache ─────────────────────────────────────────────
+
+    /** Get cached facets for a type + attribute key */
+    getFacets(key: string): FacetEntry[] | undefined {
+        return this.facets.get(key)
+    }
+
+    /** Store facets results and notify listeners */
+    setFacets(key: string, entries: FacetEntry[]): void {
+        this.facets.set(key, entries)
+        this.notify(key)
+    }
+
     // ── Subscription system ─────────────────────────────────────
 
     /** Subscribe to pagination state changes for a given key. Returns an unsubscribe function. */
@@ -99,8 +115,8 @@ export class StateManager {
         }
     }
 
-    /** Notify all listeners for a pagination key */
-    private notify(key: string): void {
+    /** Notify all listeners for a given key */
+    notify(key: string): void {
         const set = this.listeners.get(key)
         if (set) {
             for (const cb of set) cb()
