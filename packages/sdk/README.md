@@ -131,7 +131,7 @@ The SDK automatically maps camelCase names to Schema.org types and routes them t
 Entities returned by the SDK are `HydratedEntity` instances. The API returns a flat `{ entities[], factoids[] }` structure and the SDK assembles it into a typed object graph. Attributes are accessible directly as properties via a JavaScript Proxy.
 
 - **Factoid-type properties** → `RootFactoid<T>`
-- **Entity-reference properties** (e.g. `containedInPlace`) → `HydratedEntity[]`
+- **Entity-reference properties** (e.g. `containedInPlace`) → `RootFactoid<HydratedEntityInstance<T>>[]` — an array of individually-votable relationship links
 
 ### Property Access
 
@@ -143,9 +143,15 @@ station.name                  // RootFactoid<string>
 station.name.current          // "Membury Services"
 station.name.confidence       // 0.95
 
-// Entity-reference attributes return HydratedEntity[] (resolved via depth)
-station.containedInPlace      // HydratedEntity[]
-station.containedInPlace[0].name.current  // "Motorway Junction 14"
+// Entity-reference attributes are arrays of RootFactoids (resolved via depth)
+station.containedInPlace              // RootFactoid<Place>[] | undefined
+station.containedInPlace?.[0].value.name?.value  // "Motorway Junction 14"
+
+// Discriminated union narrowing on entity type
+const link = station.containedInPlace?.[0]
+if (link?.type === 'LocalBusiness') {
+    link.value.brand  // narrowed to LocalBusiness properties
+}
 ```
 
 ### Mutating Values and Saving
@@ -188,7 +194,7 @@ console.log(`${station}`)  // "Membury Services"
 | Property         | Type                 | Description                          |
 | ---------------- | -------------------- | ------------------------------------ |
 | `id`             | `string`             | Entity UUID                          |
-| `type`           | `string`             | Schema.org root type                 |
+| `type`           | `SchemaDescendants`  | Schema.org root type — strongly typed union of declared type and subtypes |
 | `additionalType` | `string \| null`     | Domain-specific subtype              |
 
 ## Factoid & RootFactoid

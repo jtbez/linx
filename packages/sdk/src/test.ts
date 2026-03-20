@@ -56,24 +56,27 @@ await linx.gasStation
 // 4c. Fetch with custom depth (default is 1 — resolves one level of entity refs)
 const deepResult = await linx.gasStation('id', { depth: 2 })
     .then(async (station) => {
-        // Entity-type properties are RootFactoid<HydratedEntityInstance<T>> at runtime.
-        // Use isEntityType() to discriminate at runtime:
-        // Entity attributes may be undefined — always use optional chaining
-        const containedIn = station.containedInPlace as any
-        console.log(containedIn)                               // RootFactoid<Place> | undefined
-        console.log(containedIn?.type)                         // 'Place'
-        console.log(isEntityType(containedIn?.type!))          // true
+        // Entity-type properties are always arrays: RootFactoid<HydratedEntityInstance<T>>[]
+        // Each element is a RootFactoid wrapping a hydrated child entity.
+        const containedIn = station.containedInPlace          // RootFactoid<Place>[] | undefined
+        const firstPlace = containedIn?.[0]                   // RootFactoid<Place> | undefined
+        console.log(firstPlace?.type)                         // 'Place'
+        console.log(isEntityType(firstPlace?.type!))          // true
 
-        // Once you have the factoid, its properties are always present
-        const place = containedIn?.value                     // HydratedEntity<Place> at runtime
-        console.log(place?.name?.value)                      // "Membury" — nested entity property
+        // Access nested entity properties via .value
+        const place = firstPlace?.value                       // HydratedEntityInstance<Place>
+        console.log(place?.name?.value)                       // "Membury" — nested entity property
 
-        // Entity-type factoids have suggestions just like scalar factoids
-        const altPlace = containedIn?.suggestions[0]?.value
-        console.log(altPlace)                                  // alternative Place value
+        // Vote on individual entity relationship links
+        await firstPlace?.upvote()
 
-        // Vote on entity-type factoids
-        await containedIn?.upvote()
+        // Archive a specific relationship link (not the entity itself)
+        await firstPlace?.archive()
+
+        // Iterate over all contained places
+        for (const link of station.containsPlace ?? []) {
+            console.log(link.value.name?.value)               // each contained Place's name
+        }
     })
 
 
@@ -87,8 +90,7 @@ await session.gasStation("id")
         // Entity attributes may be undefined — use optional chaining
         console.log(station.name?.value)                      // "Membury Services"
         console.log(station.name?.confidence)                  // 0.95
-        console.log(station.name?.type)                        // "Text"
-
+        console.log(station.name?.type)
         // Once you have the factoid, its own properties are always hydrated
         // Suggestions are pre-loaded — access synchronously
         console.log(station.name?.suggestions.length)          // number of alternative values

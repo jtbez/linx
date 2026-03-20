@@ -4,7 +4,7 @@ import { convertTuyauError } from './api-client.js'
 import { RootFactoid } from './root-factoid.js'
 import { isEntityType } from '@linxhq/vine-schema-dot-org/classify'
 import { isKeyedType, extractCollectionKey } from '@linxhq/core/factoid-map'
-import type { SchemaKey } from '@linxhq/vine-schema-dot-org'
+import type { SchemaKey, SchemaDescendants, SchemaTypeMap } from '@linxhq/vine-schema-dot-org'
 import type { LocationFeatureSpecification, PropertyValue } from '@linxhq/vine-schema-dot-org'
 import type {
     GeoCoordinates, GeoShape, PostalAddress, ContactPoint,
@@ -79,13 +79,24 @@ type ElementType<T> =
     : T
 
 /**
+ * Distributes over descendant type keys to create a discriminated union of RootFactoids.
+ * Narrowing on `.type` (e.g., `=== 'LocalBusiness'`) also narrows `.value` to the
+ * corresponding HydratedEntityInstance.
+ */
+type EntityFactoidUnion<D extends string> =
+    D extends keyof SchemaTypeMap
+    ? RootFactoid<HydratedEntityInstance<SchemaTypeMap[D]>, D>
+    : never
+
+/**
  * Maps a single Schema.org property type to its hydrated form.
  *
  * - Scalars (string, number, boolean) → RootFactoid<T>
  * - Keyed StructuredValues (LocationFeatureSpecification, PropertyValue) → FactoidMap<T>
  * - Non-keyed StructuredValues (GeoCoordinates, PostalAddress, etc.) → RootFactoid<T>
  *   with a literal `.type` discriminant for union narrowing
- * - Entity refs (Place, Organization, etc.) → RootFactoid<HydratedEntityInstance<T>>
+ * - Entity refs (Place, Organization, etc.) → discriminated union of RootFactoid variants
+ *   for each descendant type, enabling narrowing on `.type` to refine `.value`
  *
  * For union property types (e.g., geo: GeoShape | GeoCoordinates), TypeScript distributes
  * across the union creating a discriminated union on `.type`:
@@ -98,8 +109,12 @@ type HydratedProperty<T> =
     ? FactoidMap<T>
     : T extends NonKeyedStructuredValue & { type?: infer TName extends SchemaKey }
     ? RootFactoid<T, TName>
+    : T extends Record<string, any> & { type?: infer TName extends string }
+    ? TName extends keyof SchemaDescendants
+        ? EntityFactoidUnion<SchemaDescendants[TName]>[]
+        : RootFactoid<HydratedEntityInstance<T>, TName>[]
     : T extends Record<string, any>
-    ? RootFactoid<HydratedEntityInstance<T>>
+    ? RootFactoid<HydratedEntityInstance<T>>[]
     : RootFactoid<T>
 
 /**
@@ -107,10 +122,22 @@ type HydratedProperty<T> =
  * Runtime discrimination via factoid.type + isEntityType().
  */
 type HydratedAttributes<TData> = {
-    [K in keyof TData]?: HydratedProperty<
+    [K in keyof TData as K extends 'type' ? never : K]?: HydratedProperty<
         NonNullable<ElementType<NonNullable<TData[K]>>>
     >
 }
+
+/**
+ * Resolve the strongly-typed `.type` field for a hydrated entity.
+ * Uses SchemaDescendants to produce a union of the declared type and all its subtypes.
+ * Falls back to `string` when no literal type is available.
+ */
+type ResolveEntityType<TData> =
+    TData extends { type?: infer TName extends string }
+    ? TName extends keyof SchemaDescendants
+        ? SchemaDescendants[TName]
+        : TName
+    : string
 
 /**
  * The public type of HydratedEntity.
@@ -120,7 +147,7 @@ type HydratedAttributes<TData> = {
  * open-ended Record access for backward compatibility.
  */
 export type HydratedEntityInstance<TData = Record<string, unknown>> =
-    HydratedEntityImpl & HydratedAttributes<TData>
+    Omit<HydratedEntityImpl, 'type'> & { readonly type: ResolveEntityType<TData> } & HydratedAttributes<TData>
 
 /**
  * A hydrated entity assembled from the flat { entities, factoids } API response.
@@ -138,7 +165,7 @@ class HydratedEntityImpl {
     readonly type: string
     readonly additionalType: string | null
 
-    private attrs: Record<string, RootFactoid | FactoidMap> = {}
+    private attrs: Record<string, RootFactoid | RootFactoid[] | FactoidMap> = {}
     private api: ApiClient
     private tracker: ChangeTracker
 
@@ -198,16 +225,22 @@ class HydratedEntityImpl {
                     }
                 }
                 this.attrs[attribute] = map
-            } else if (isEntityType(current.type) &&
-                typeof current.value === 'string' &&
-                UUID_RE.test(current.value) &&
-                entityMap.has(current.value) &&
-                !visited.has(current.value)) {
-                // Entity-type factoid: replace UUID value with assembled child
-                const childRaw = entityMap.get(current.value)!
-                const child = new HydratedEntityImpl(childRaw, response, this.api, this.tracker, new Set(visited))
-                const hydratedFactoid = { ...current, value: child }
-                this.attrs[attribute] = new RootFactoid(hydratedFactoid, this.api, this.tracker)
+            } else if (isEntityType(current.type)) {
+                // Entity-type factoids: always build an array of RootFactoids
+                const arr: RootFactoid[] = []
+                for (const f of factoids) {
+                    if (typeof f.value === 'string' &&
+                        UUID_RE.test(f.value) &&
+                        entityMap.has(f.value) &&
+                        !visited.has(f.value)) {
+                        const childRaw = entityMap.get(f.value)!
+                        const child = new HydratedEntityImpl(childRaw, response, this.api, this.tracker, new Set(visited))
+                        arr.push(new RootFactoid({ ...f, value: child }, this.api, this.tracker))
+                    } else {
+                        arr.push(new RootFactoid(f, this.api, this.tracker))
+                    }
+                }
+                this.attrs[attribute] = arr
             } else {
                 // Factoid-type or unresolvable entity ref: wrap as-is
                 this.attrs[attribute] = new RootFactoid(current, this.api, this.tracker)
@@ -215,11 +248,11 @@ class HydratedEntityImpl {
         }
     }
 
-    getAttribute(key: string): RootFactoid | FactoidMap | undefined {
+    getAttribute(key: string): RootFactoid | RootFactoid[] | FactoidMap | undefined {
         return this.attrs[key]
     }
 
-    getAttributes(): Record<string, RootFactoid | FactoidMap> {
+    getAttributes(): Record<string, RootFactoid | RootFactoid[] | FactoidMap> {
         return { ...this.attrs }
     }
 
@@ -233,6 +266,9 @@ class HydratedEntityImpl {
         for (const v of Object.values(this.attrs)) {
             if (v instanceof RootFactoid) {
                 result.push(v)
+            } else if (Array.isArray(v)) {
+                // Entity array — each element is a RootFactoid
+                result.push(...v)
             } else {
                 // FactoidMap — plain record of RootFactoids
                 result.push(...Object.values(v as FactoidMap))
@@ -304,6 +340,9 @@ class HydratedEntityImpl {
         for (const attrValue of Object.values(this.attrs)) {
             if (attrValue instanceof RootFactoid) {
                 await attrValue.archive()
+            } else if (Array.isArray(attrValue)) {
+                // Skip — entity relationships are not archived with the entity.
+                // Use individual element .archive() to remove specific links.
             } else {
                 for (const factoid of Object.values(attrValue as FactoidMap)) {
                     await factoid.archive()
