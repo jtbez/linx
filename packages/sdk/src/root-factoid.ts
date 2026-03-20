@@ -41,7 +41,7 @@ export class RootFactoid<T = unknown, TType extends string = string> extends Fac
         const apiValue = (newValue != null && typeof newValue === 'object' && 'id' in newValue && 'type' in newValue)
             ? (newValue as { id: string }).id
             : newValue
-        this.tracker.markUpdated(this.entityId, this.id, this.attribute, apiValue)
+        this.tracker.markUpdated(this.entityId, this.apiId, this.attribute, apiValue)
     }
 
     /**
@@ -56,11 +56,11 @@ export class RootFactoid<T = unknown, TType extends string = string> extends Fac
     ): Promise<void> {
         try {
             await this.api.request('factoids.suggest', {
-                params: { id: this.id },
+                params: { id: this.apiId },
                 body: { value, source: source ?? {} },
             })
         } catch (err) {
-            throw convertTuyauError(err, 'POST', `/factoids/${this.id}/suggest`)
+            throw convertTuyauError(err, 'POST', `/factoids/${this.apiId}/suggest`)
         }
     }
 
@@ -75,11 +75,11 @@ export class RootFactoid<T = unknown, TType extends string = string> extends Fac
     async verify(): Promise<void> {
         try {
             await this.api.request('verifications.store', {
-                params: { id: this.id },
+                params: { id: this.apiId },
             } as any)
             this.verified = true
         } catch (err) {
-            throw convertTuyauError(err, 'POST', `/factoids/${this.id}/verify`)
+            throw convertTuyauError(err, 'POST', `/factoids/${this.apiId}/verify`)
         }
     }
 
@@ -92,12 +92,12 @@ export class RootFactoid<T = unknown, TType extends string = string> extends Fac
     async archive(): Promise<void> {
         try {
             await this.api.request('factoids.archive', {
-                params: { id: this.id },
+                params: { id: this.apiId },
             })
             this.isCurrent = false
-            this.tracker.markArchived(this.entityId, this.id, this.attribute)
+            this.tracker.markArchived(this.entityId, this.apiId, this.attribute)
         } catch (err) {
-            throw convertTuyauError(err, 'DELETE', `/factoids/${this.id}`)
+            throw convertTuyauError(err, 'DELETE', `/factoids/${this.apiId}`)
         }
     }
 }

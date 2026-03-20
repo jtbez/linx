@@ -59,6 +59,7 @@ export type SerializedFactoid = {
         notes: string | null
     } | null
     createdAt: unknown
+    sourceFactoidId?: string
 }
 
 /** The flat API response shape shared by entity endpoints */

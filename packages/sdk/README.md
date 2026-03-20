@@ -197,6 +197,23 @@ console.log(`${station}`)  // "Membury Services"
 | `type`           | `SchemaDescendants`  | Schema.org root type — strongly typed union of declared type and subtypes |
 | `additionalType` | `string \| null`     | Domain-specific subtype              |
 
+### Inverse Relationships
+
+Schema.org inverse property pairs (e.g. `containsPlace` ↔ `containedInPlace`) are resolved automatically at read time. Creating a forward reference on one entity makes the back-reference appear on the target — no extra writes needed. Inverse references are mirrors of the same underlying factoid, so voting or archiving either side affects the same data.
+
+```typescript
+// Forward: station has containsPlace → cafe
+const station = await session.serviceStation('uuid')
+station.containsPlace?.[0].value.name?.value  // "Costa Coffee"
+
+// Inverse is automatic: cafe has containedInPlace → station
+const cafe = await session.cafeOrCoffeeShop('cafe-uuid')
+cafe.containedInPlace?.[0].value.name?.value  // "Membury Services"
+
+// Both vote on the same underlying factoid
+await station.containsPlace?.[0].upvote()
+```
+
 ## Factoid & RootFactoid
 
 The SDK uses two factoid classes with an inheritance relationship:

@@ -13,6 +13,7 @@ import { convertTuyauError } from './api-client.js'
  */
 export class Factoid<T = unknown, TType extends string = string> {
     readonly id: string
+    readonly sourceFactoidId?: string
     readonly entityId: string
     readonly attribute: string
     readonly type: TType
@@ -26,6 +27,7 @@ export class Factoid<T = unknown, TType extends string = string> {
 
     constructor(raw: SerializedFactoid, api: ApiClient) {
         this.id = raw.id
+        this.sourceFactoidId = raw.sourceFactoidId
         this.entityId = raw.entityId
         this.attribute = raw.attribute
         this.type = raw.type as unknown as TType
@@ -35,6 +37,11 @@ export class Factoid<T = unknown, TType extends string = string> {
         this.verified = raw.verified ?? false
         this.source = raw.source
         this.api = api
+    }
+
+    /** The factoid ID to use for API operations (vote, report, etc.) */
+    protected get apiId(): string {
+        return this.sourceFactoidId ?? this.id
     }
 
     get confidence(): number {
@@ -51,11 +58,11 @@ export class Factoid<T = unknown, TType extends string = string> {
         let result: any
         try {
             result = await this.api.request('factoids.vote', {
-                params: { id: this.id },
+                params: { id: this.apiId },
                 body: { direction: 'up' },
             })
         } catch (err) {
-            throw convertTuyauError(err, 'POST', `/factoids/${this.id}/vote`)
+            throw convertTuyauError(err, 'POST', `/factoids/${this.apiId}/vote`)
         }
         this.confidenceScore = result.confidenceScore
     }
@@ -70,11 +77,11 @@ export class Factoid<T = unknown, TType extends string = string> {
         let result: any
         try {
             result = await this.api.request('factoids.vote', {
-                params: { id: this.id },
+                params: { id: this.apiId },
                 body: { direction: 'down' },
             })
         } catch (err) {
-            throw convertTuyauError(err, 'POST', `/factoids/${this.id}/vote`)
+            throw convertTuyauError(err, 'POST', `/factoids/${this.apiId}/vote`)
         }
         this.confidenceScore = result.confidenceScore
     }
@@ -95,11 +102,11 @@ export class Factoid<T = unknown, TType extends string = string> {
     ): Promise<void> {
         try {
             await this.api.request('reports.store', {
-                params: { id: this.id },
+                params: { id: this.apiId },
                 body: { reason, description },
             } as any)
         } catch (err) {
-            throw convertTuyauError(err, 'POST', `/factoids/${this.id}/report`)
+            throw convertTuyauError(err, 'POST', `/factoids/${this.apiId}/report`)
         }
     }
 

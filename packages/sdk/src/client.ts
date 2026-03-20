@@ -473,16 +473,23 @@ class SessionClientImpl {
     private registerAndLoadSuggestions(entity: HydratedEntity): void {
         const factoids = (entity as any).getAllFactoids() as RootFactoid[]
         const needsSuggestions: string[] = []
+        const realToSyntheticIds = new Map<string, string[]>()
 
         for (const factoid of factoids) {
             this.state.setFactoid(factoid.id, factoid)
             if (!this.state.hasSuggestions(factoid.id)) {
-                needsSuggestions.push(factoid.id)
+                const realId = factoid.sourceFactoidId ?? factoid.id
+                needsSuggestions.push(realId)
+                if (realId !== factoid.id) {
+                    const existing = realToSyntheticIds.get(realId) ?? []
+                    existing.push(factoid.id)
+                    realToSyntheticIds.set(realId, existing)
+                }
             }
         }
 
         if (needsSuggestions.length > 0) {
-            this.loadSuggestionsBatch(needsSuggestions)
+            this.loadSuggestionsBatch(needsSuggestions, realToSyntheticIds)
         }
     }
 
@@ -490,19 +497,31 @@ class SessionClientImpl {
      * Fire-and-forget: fetch suggestions for multiple factoids in a single
      * batch request and attach them to each RootFactoid's `.suggestions`.
      */
-    private async loadSuggestionsBatch(factoidIds: string[]): Promise<void> {
+    private async loadSuggestionsBatch(
+        factoidIds: string[],
+        realToSyntheticIds?: Map<string, string[]>,
+    ): Promise<void> {
         try {
+            const uniqueIds = [...new Set(factoidIds)]
             const result = await this.api.request('factoids.batchSuggestions', {
-                body: { ids: factoidIds },
+                body: { ids: uniqueIds },
             }) as { data: Record<string, SerializedFactoid[]> }
 
-            for (const factoidId of factoidIds) {
+            for (const factoidId of uniqueIds) {
                 const rawSuggestions = result.data[factoidId] ?? []
                 const suggestions = rawSuggestions.map(
                     (raw) => new Factoid(raw, this.api),
                 )
                 const fetchPage = (page: number) => this.fetchSuggestionsPage(factoidId, page)
                 this.state.attachSuggestions(factoidId, suggestions, null, fetchPage)
+
+                // Also attach to any synthetic factoid IDs that map to this real ID
+                const syntheticIds = realToSyntheticIds?.get(factoidId)
+                if (syntheticIds) {
+                    for (const synId of syntheticIds) {
+                        this.state.attachSuggestions(synId, suggestions, null, fetchPage)
+                    }
+                }
             }
         } catch {
             // Silently fail — suggestions are non-critical
