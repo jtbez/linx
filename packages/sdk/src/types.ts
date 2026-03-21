@@ -2,6 +2,41 @@ import type { SchemaTypeMap, ActivityLogContract, FilterCondition } from '@linxh
 
 /** Unwrap array/readonly-array types to their element type; non-arrays pass through */
 type UnwrapArray<T> = T extends readonly (infer U)[] ? U : T
+
+/**
+ * Recursively resolve a dot-notation path through Schema.org types.
+ *
+ * e.g. ResolveDotPath<ServiceStation, "containsPlace.brand.name">
+ *   → UnwrapArray<ServiceStation["containsPlace"]> = Place
+ *   → UnwrapArray<Place["brand"]> = Brand | Organization
+ *   → UnwrapArray<(Brand | Organization)["name"]> = string
+ */
+type ResolveDotPath<TData, Path extends string> =
+    Path extends `${infer Head}.${infer Tail}`
+        ? Head extends keyof TData
+            ? ResolveDotPath<NonNullable<UnwrapArray<TData[Head]>>, Tail>
+            : unknown
+        : Path extends keyof TData
+            ? UnwrapArray<TData[Path]>
+            : unknown
+
+/**
+ * Generates valid facet attribute paths with IDE autocomplete:
+ * - Direct property keys (e.g. "name", "containsPlace")
+ * - One-level dot-notation for entity-ref properties (e.g. "containsPlace.name", "containsPlace.brand")
+ * - Accepts arbitrary deeper paths via string fallback
+ *
+ * Limited to 1 level of expansion to keep the union size manageable
+ * for Schema.org types which can have 100+ properties each.
+ */
+type FacetPath<TData> =
+    | (keyof TData & string)
+    | { [K in keyof TData & string]:
+        NonNullable<UnwrapArray<TData[K]>> extends Record<string, any>
+            ? `${K}.${keyof NonNullable<UnwrapArray<TData[K]>> & string}`
+            : never
+      }[keyof TData & string]
+
 import type { HydratedEntityInstance } from './hydrated-entity.js'
 import type { RootFactoid } from './root-factoid.js'
 import type { PaginatedResult } from './result.js'
@@ -101,12 +136,18 @@ interface ReadAccessor<TData> {
      * Returns cached data immediately, or [] while triggering a background fetch.
      * Subscribe to be notified when facets data arrives.
      *
+     * Supports dot-notation paths to traverse entity references:
      * ```typescript
      * const amenities = session.serviceStation.facets('amenityFeature')
-     * // [{ value: { key: 'wifi', ... }, count: 42 }, ...]
+     * const brands = session.serviceStation.facets('containsPlace.brand.name')
      * ```
+     *
+     * Optional `where` conditions filter the root entities before aggregation.
+     * Optional `filterDepth` controls how deep filter paths can traverse (default: 2, max: 3).
      */
-    facets<K extends keyof TData & string>(attribute: K): FacetEntry<UnwrapArray<NonNullable<TData[K]>>>[]
+    facets<K extends FacetPath<TData>>(attribute: K, where?: FilterCondition<TData>[], filterDepth?: number): FacetEntry<ResolveDotPath<TData, K>>[]
+    /** Arbitrary path overload — deeper dot-notation paths beyond autocomplete depth */
+    facets(attribute: string, where?: FilterCondition<TData>[], filterDepth?: number): FacetEntry[]
     /** Synchronous metadata about the current state. Unlike count(), does not trigger a background fetch. */
     meta(filters?: Record<string, string>, where?: FilterCondition<TData>[]): AccessorMeta
     /** Synchronous access to cached entities. Triggers a background list() if empty. */

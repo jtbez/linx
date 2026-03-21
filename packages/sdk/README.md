@@ -214,6 +214,32 @@ cafe.containedInPlace?.[0].value.name?.value  // "Membury Services"
 await station.containsPlace?.[0].upvote()
 ```
 
+## Facets
+
+Get distinct values for any attribute across all entities of a type. Supports dot-notation paths that traverse entity references with bidirectional (forward + inverse) support:
+
+```typescript
+// Simple attribute facets
+const operators = await session.gasStation.facets('operator')
+// [{ value: 'Shell', count: 15 }, { value: 'BP', count: 12 }, ...]
+
+// Dot-notation traversal through entity references
+const brands = await session.serviceStation.facets('containsPlace.brand.name')
+// [{ value: 'Costa Coffee', count: 3 }, { value: 'WHSmith', count: 2 }, ...]
+
+// Facets with filter conditions
+const filteredBrands = await session.serviceStation.facets(
+  'containsPlace.brand.name',
+  [{ field: 'containedInPlace.name', op: 'eq', value: 'M1' }]
+)
+
+// Scoped queries carry filters to facets automatically
+const m1Stations = session.serviceStation.where([
+  { field: 'containedInPlace.name', op: 'eq', value: 'M1' }
+])
+const amenities = await m1Stations.facets('amenityFeature')
+```
+
 ## Factoid & RootFactoid
 
 The SDK uses two factoid classes with an inheritance relationship:

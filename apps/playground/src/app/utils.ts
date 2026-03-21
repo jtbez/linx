@@ -38,7 +38,19 @@ export function formatAttributes(entity: HydratedEntity): Record<string, unknown
         confidence: val.confidenceScore,
         factoidId: val.id,
       };
+    } else if (Array.isArray(val)) {
+      // Entity-reference array — each element is a RootFactoid wrapping a HydratedEntity
+      out[key] = val.map((item: RootFactoid) => ({
+        value:
+          item.value && typeof item.value === "object" && "id" in item.value
+            ? summarizeEntity(item.value as HydratedEntity)
+            : item.value,
+        confidence: item.confidenceScore,
+        factoidId: item.id,
+        type: item.type,
+      }));
     } else {
+      // FactoidMap — Record<string, RootFactoid>
       const sub: Record<string, unknown> = {};
       for (const [subKey, subVal] of Object.entries(val as Record<string, RootFactoid>)) {
         sub[subKey] = {

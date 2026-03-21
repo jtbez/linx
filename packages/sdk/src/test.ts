@@ -97,6 +97,8 @@ await session.gasStation("id")
         console.log(station.name?.suggestions[0]?.value)       // first suggestion's value (typed)
         console.log(station.name?.suggestions[0]?.confidence)  // first suggestion's confidence
 
+        const facets = session.serviceStation.facets("containsPlace.brand.name");
+
         // Vote on a suggestion
         await station.name?.suggestions[0]?.upvote()
 

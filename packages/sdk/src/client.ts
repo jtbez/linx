@@ -269,8 +269,8 @@ class SessionClientImpl {
          */
         const facetsBaseKey = `facets:${schemaType}`
 
-        accessor.facets = (attribute: string): FacetEntry[] => {
-            const facetsKey = JSON.stringify({ schemaType, attribute })
+        accessor.facets = (attribute: string, where?: FilterCondition[], filterDepth?: number): FacetEntry[] => {
+            const facetsKey = JSON.stringify({ schemaType, attribute, where })
             const cached = this.state.getFacets(facetsKey)
             if (cached) return cached
 
@@ -283,6 +283,8 @@ class SessionClientImpl {
                             query: {
                                 attribute,
                                 ...(schemaType !== rootType ? { additionalType: schemaType } : {}),
+                                ...(where?.length ? { where: JSON.stringify(where) } : {}),
+                                ...(filterDepth != null ? { filterDepth } : {}),
                             },
                         } as any) as { data: FacetEntry[] }
                         this.state.setFacets(facetsKey, response.data)
@@ -412,7 +414,8 @@ class SessionClientImpl {
                 })
             }
 
-            scoped.facets = (attribute: string) => accessor.facets(attribute)
+            scoped.facets = (attribute: string, where?: FilterCondition[], filterDepth?: number) =>
+                accessor.facets(attribute, where ?? conditions, filterDepth ?? scopedFilterDepth)
             scoped.meta = (filters?: Record<string, string>, where?: FilterCondition[]) =>
                 accessor.meta(filters, where ?? conditions)
             scoped.state = (filters?: Record<string, string>, where?: FilterCondition[]) =>
