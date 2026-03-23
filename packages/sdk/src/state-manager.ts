@@ -76,12 +76,21 @@ export class StateManager {
     /** Update pagination state after a successful list() fetch */
     setPagination(key: string, meta: PaginationMeta, entityIds: string[]): void {
         const existing = this.pagination.get(key)
+        // Page 1 means a fresh query or refresh — reset entityIds rather than appending.
+        // Pages > 1 are pagination advances (infinite scroll) and should append,
+        // but always deduplicate to guard against any overlap between pages.
+        let combined: string[]
+        if (existing && meta.currentPage > 1) {
+            const seen = new Set(existing.entityIds)
+            const fresh = entityIds.filter((id) => !seen.has(id))
+            combined = [...existing.entityIds, ...fresh]
+        } else {
+            combined = [...new Set(entityIds)]
+        }
         this.pagination.set(key, {
             meta,
             currentPage: meta.currentPage,
-            entityIds: existing
-                ? [...existing.entityIds, ...entityIds]
-                : entityIds,
+            entityIds: combined,
         })
         this.notify(key)
     }

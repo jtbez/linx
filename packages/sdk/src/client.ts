@@ -1,27 +1,27 @@
-import { createApiClient, convertTuyauError } from './api-client.js'
-import type { ApiClient } from './api-client.js'
-import { PermissionError } from './errors.js'
-import { HydratedEntity } from './hydrated-entity.js'
-import type { SerializedFactoid, EntityResponse } from './hydrated-entity.js'
-import { Factoid } from './factoid.js'
-import type { RootFactoid } from './root-factoid.js'
-import { PaginatedCollection } from './paginated-collection.js'
-import { StateManager } from './state-manager.js'
-import { ChangeTracker } from './change-tracker.js'
-import { resolveSchemaType, resolveRootType } from './type-map.js'
-import { paginatedSuccess } from './result.js'
-import type { PaginatedResult, PaginationMeta } from './result.js'
 import type { FilterCondition } from '@linxhq/core'
+import type { ApiClient } from './api-client.js'
+import { convertTuyauError, createApiClient } from './api-client.js'
+import { ChangeTracker } from './change-tracker.js'
+import { PermissionError } from './errors.js'
+import { Factoid } from './factoid.js'
+import type { EntityResponse, SerializedFactoid } from './hydrated-entity.js'
+import { HydratedEntity } from './hydrated-entity.js'
+import { PaginatedCollection } from './paginated-collection.js'
+import type { PaginatedResult, PaginationMeta } from './result.js'
+import { paginatedSuccess } from './result.js'
+import type { RootFactoid } from './root-factoid.js'
+import { StateManager } from './state-manager.js'
+import { resolveRootType, resolveSchemaType } from './type-map.js'
 import type {
+    AccessorMeta,
+    AuthenticatedLinxClientInstance,
+    EffectivePermission,
+    FacetEntry,
     LinxClientConfig,
     LinxClientInstance,
-    AuthenticatedLinxClientInstance,
+    PermissionAction,
     SessionClientInstance,
     StateSnapshot,
-    EffectivePermission,
-    PermissionAction,
-    AccessorMeta,
-    FacetEntry,
 } from './types.js'
 
 function hasPermission(permissions: EffectivePermission[], action: PermissionAction): boolean {
@@ -183,6 +183,12 @@ class SessionClientImpl {
             const entities = response.entities
                 .filter((e) => rootIds.has(e.id))
                 .map((rawEntity) => {
+                    // Reuse the cached entity if we already have it — avoids
+                    // creating new object references for entities that haven't
+                    // changed, keeping state() snapshots referentially stable
+                    // across queries with different where conditions.
+                    const cached = this.state.getEntity(rawEntity.id)
+                    if (cached) return cached
                     const entity = new HydratedEntity(rawEntity, response, this.api, this.tracker)
                     this.state.setEntity(rawEntity.id, entity)
                     this.registerAndLoadSuggestions(entity)
@@ -320,22 +326,37 @@ class SessionClientImpl {
          * Returns all entities currently in state from previous list() calls.
          * If no data exists in state, triggers a background list() fetch —
          * subscribers will be notified when data arrives.
+         *
+         * Returns a stable array reference when contents are unchanged, satisfying
+         * useSyncExternalStore's requirement that getSnapshot() is referentially stable.
          */
+        const stateCache = new Map<string, HydratedEntity[]>()
+
         accessor.state = (filters?: Record<string, string>, where?: FilterCondition[]): HydratedEntity[] => {
             const key = paginationKey(filters, where)
             const existing = this.state.getPagination(key)
 
             if (existing) {
-                return existing.entityIds
+                const next = existing.entityIds
                     .map((id) => this.state.getEntity(id))
                     .filter((e): e is HydratedEntity => e != null)
+                const prev = stateCache.get(key)
+                if (prev && prev.length === next.length && next.every((e, i) => e === prev[i])) {
+                    return prev
+                }
+                stateCache.set(key, next)
+                return next
             }
 
             // No data — fire background list() to populate state
             if (hasPermission(perms, 'read')) {
-                fetchPage(1, 20, filters, where).catch(() => {})
+                fetchPage(1, 20, filters, where).catch(() => { })
             }
-            return []
+            // Return a stable empty array reference so useSyncExternalStore's
+            // getSnapshot() doesn't produce a new reference on every call,
+            // which would cause an infinite re-render loop.
+            if (!stateCache.has(key)) stateCache.set(key, [])
+            return stateCache.get(key)!
         }
 
         /**
@@ -355,7 +376,7 @@ class SessionClientImpl {
 
             // No cached data — fire background list() to populate state
             if (hasPermission(perms, 'read')) {
-                fetchPage(1, 1, filters, where).catch(() => {})
+                fetchPage(1, 1, filters, where).catch(() => { })
             }
             return 0
         }
@@ -785,11 +806,11 @@ class LinxClientImpl {
 // ── Exports with type-safe constructors ─────────────────────────────
 
 export const LinxClient = LinxClientImpl as unknown as {
-    new (config: LinxClientConfig): LinxClientInstance
+    new(config: LinxClientConfig): LinxClientInstance
 }
 
 export const AuthenticatedLinxClient = AuthenticatedLinxClientImpl as unknown as {
-    new (
+    new(
         api: ApiClient, permissions: EffectivePermission[], apiKey?: string,
         setToken?: (token: string) => void,
         generateKeyPair?: () => Promise<JsonWebKey | null>,
@@ -798,5 +819,5 @@ export const AuthenticatedLinxClient = AuthenticatedLinxClientImpl as unknown as
 }
 
 export const SessionClient = SessionClientImpl as unknown as {
-    new (api: ApiClient, permissions: EffectivePermission[]): SessionClientInstance
+    new(api: ApiClient, permissions: EffectivePermission[]): SessionClientInstance
 }
