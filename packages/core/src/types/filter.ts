@@ -19,6 +19,21 @@ export type FilterOp =
     | 'startsWith'
     | 'endsWith'
     | 'exists'
+    | 'near'
+
+/**
+ * Value for the `near` operator — a lat/lng point with a radius in kilometres.
+ * Only valid when used with the `geo` field on entities that have GeoCoordinates factoids.
+ *
+ * `latitude` and `longitude` accept `number | string` to match the Schema.org
+ * `GeoCoordinates` spec — both are cast to numeric in the SQL query.
+ */
+export interface NearValue {
+    latitude: number | string
+    longitude: number | string
+    /** Radius in kilometres */
+    radius: number
+}
 
 // ── Entity-level fields ─────────────────────────────────────────────
 
@@ -96,6 +111,9 @@ type ResolveFilterValue<TData, F extends string> =
  * The `value` type is inferred from the `field` path — for example,
  * `{ field: 'name', ... }` narrows `value` to the type of the `name` property.
  *
+ * The `near` operator is a special case: it is only valid for the `geo` field
+ * and requires a `NearValue` `{ latitude, longitude, radius }` as its value.
+ *
  * @template TData - The Schema.org type, used to narrow `field` to valid paths.
  *
  * @example
@@ -108,12 +126,15 @@ type ResolveFilterValue<TData, F extends string> =
  *
  * // Existence check
  * { field: 'amenityFeature', op: 'exists' }
+ *
+ * // Geo radius filter (places/locations with GeoCoordinates)
+ * { field: 'geo', op: 'near', value: { latitude: 51.5, longitude: -0.1, radius: 10 } }
  * ```
  */
-export type FilterCondition<TData = Record<string, unknown>> = {
-    [F in FilterField<TData>]: {
-        field: F
-        op: FilterOp
-        value?: ResolveFilterValue<TData, F & string> | ResolveFilterValue<TData, F & string>[]
-    }
-}[FilterField<TData>]
+export type FilterCondition<TData = Record<string, unknown>> =
+    | { [F in FilterField<TData>]: {
+          field: F
+          op: Exclude<FilterOp, 'near'>
+          value?: ResolveFilterValue<TData, F & string> | ResolveFilterValue<TData, F & string>[]
+      } }[FilterField<TData>]
+    | { field: 'geo'; op: 'near'; value: NearValue }
