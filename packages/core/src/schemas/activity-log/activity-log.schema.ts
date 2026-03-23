@@ -33,11 +33,17 @@ export const ACTIVITY_ACTIONS = [
     'auth.logout',
     'auth.session_switch',
     'application.created',
+    'application.updated',
     'application.deleted',
     'application.apikey.created',
     'application.apikey.revoked',
     'permission.updated',
     'account.updated',
+    'auth.permission_denied',
+    'auth.dpop_failed',
+    'auth.origin_mismatch',
+    'auth.threat_blocked',
+    'auth.rate_limited',
     'error.unhandled',
 ] as const;
 
